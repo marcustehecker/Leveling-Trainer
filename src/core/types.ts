@@ -21,6 +21,8 @@ export interface Profile {
   sessionMinutes: number
   diet: { preferences: string; allergies: string }
   bedtime?: string
+  /** When the player accepted the safety terms and confirmed they are 13+. */
+  acceptedTermsAt?: string
 }
 
 export interface Assessment {

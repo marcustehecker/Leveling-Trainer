@@ -5,6 +5,7 @@ import type { AgeRange, Assessment, Equipment, Experience, GameState, Goal, Prof
 import { Bar, Btn, Panel, RankEmblem, Stepper, SystemText } from '../ui/components'
 import { KG_PER_LB, nowIso, todayKey } from '../store'
 import { STAT_LABEL } from './labels'
+import { TermsConsent } from './Legal'
 
 type Draft = Omit<Profile, 'heightCm' | 'weightKg'> & { height: string; weight: string; assessment: Assessment }
 
@@ -59,7 +60,7 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
 
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
 
-  const steps: { title: string; body: ReactNode; valid?: boolean }[] = [
+  const steps: { title: string; body: ReactNode; valid?: boolean; custom?: boolean }[] = [
     {
       title: 'Player Detected',
       body: (
@@ -197,15 +198,25 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
         </div>
       ),
     },
+    {
+      title: 'System Terms',
+      custom: true,
+      body: (
+        <div className="grid gap-4">
+          <p className="text-center text-sm text-glow">[Before the System binds to you, confirm the following.]</p>
+          <TermsConsent cta="Complete Registration" onAccept={() => finish()} />
+        </div>
+      ),
+    },
   ]
 
-  const finish = () => {
+  function finish() {
     const h = Number(d.height)
     const w = Number(d.weight)
     const profile: Profile = {
       name: d.name.trim(), ageRange: d.ageRange, units: d.units, experience: d.experience, goal: d.goal,
       equipment: d.equipment, trainingDays: [...d.trainingDays].sort(), sessionMinutes: d.sessionMinutes,
-      diet: d.diet, bedtime: d.bedtime,
+      diet: d.diet, bedtime: d.bedtime, acceptedTermsAt: nowIso(),
       heightCm: h > 0 ? (d.units === 'imperial' ? h * 2.54 : h) : undefined,
       weightKg: w > 0 && !minor ? (d.units === 'imperial' ? w * KG_PER_LB : w) : undefined,
     }
@@ -226,9 +237,11 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
       <Panel title={cur.title} className="mt-4" open key={step}>{cur.body}</Panel>
       <div className="mt-auto flex gap-3 pt-6">
         {step > 0 && <Btn variant="ghost" onClick={() => setStep(step - 1)}>Back</Btn>}
-        <Btn className="flex-1" disabled={cur.valid === false} onClick={() => (last ? finish() : setStep(step + 1))}>
-          {last ? 'Complete Registration' : 'Continue'}
-        </Btn>
+        {!cur.custom && (
+          <Btn className="flex-1" disabled={cur.valid === false} onClick={() => (last ? finish() : setStep(step + 1))}>
+            {last ? 'Complete Registration' : 'Continue'}
+          </Btn>
+        )}
       </div>
     </div>
   )

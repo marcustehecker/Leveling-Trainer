@@ -3,6 +3,9 @@ import { dismissCeremony } from './core/engine'
 import { useAccount, useGame, type SyncStatus } from './store'
 import { cloudEnabled, type Account } from './cloud'
 import { Login } from './screens/Login'
+import { TermsConsent } from './screens/Legal'
+import { Corners } from './ui/components'
+import { nowIso } from './store'
 import { Onboarding } from './screens/Onboarding'
 import { SystemTab } from './screens/SystemTab'
 import { TrainingTab } from './screens/TrainingTab'
@@ -43,7 +46,7 @@ function Splash() {
 }
 
 function Game({ account }: { account: Account | null }) {
-  const { state, ready, commit, update, sync } = useGame(account?.uid ?? null)
+  const { state, ready, commit, update, sync, wipe } = useGame(account?.uid ?? null)
   const [tab, setTab] = useState<Tab>('system')
   const [toast, setToast] = useState<string | null>(null)
 
@@ -66,6 +69,21 @@ function Game({ account }: { account: Account | null }) {
   if (!ready) return <><Particles /><Splash /></>
   if (!state) return <><Particles /><div className="relative z-10 h-full"><Onboarding defaultName={account?.name?.split(' ')[0] ?? ''} onDone={(s) => { commit(s); setTab('system') }} /></div></>
 
+  if (!state.profile.acceptedTermsAt) {
+    return (
+      <><Particles />
+        <div className="safe-top safe-bottom relative z-10 mx-auto flex min-h-full max-w-md items-center px-4">
+          <div className="sys-panel anim-open w-full px-5 pb-6 pt-0">
+            <Corners />
+            <header className="relative -mt-3.5 mb-4 flex justify-center"><h2 className="sys-plaque sys-title glow-text text-sm text-white">System Terms</h2></header>
+            <p className="mb-4 text-center text-sm text-glow">[The System has been updated. Confirm the following to continue.]</p>
+            <TermsConsent cta="Continue" onAccept={() => update((x) => ({ ...x, profile: { ...x.profile, acceptedTermsAt: nowIso() } }))} />
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <div className="relative mx-auto min-h-full max-w-md">
       <Particles />
@@ -81,7 +99,7 @@ function Game({ account }: { account: Account | null }) {
         {tab === 'training' && <TrainingTab s={state} update={update} onLogged={(m) => { setToast(`[Training recorded. ${m}]`); setTab('system') }} />}
         {tab === 'nutrition' && <NutritionTab s={state} />}
         {tab === 'progress' && <ProgressTab s={state} />}
-        {tab === 'hunter' && <HunterTab s={state} update={update} commit={commit} account={account} />}
+        {tab === 'hunter' && <HunterTab s={state} update={update} commit={commit} account={account} wipe={wipe} />}
       </main>
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-sky-200/30 bg-[#020617]/90 shadow-[0_-8px_24px_rgba(37,99,235,.18)] backdrop-blur" aria-label="Main">
         <div className="mx-auto grid max-w-md grid-cols-5">

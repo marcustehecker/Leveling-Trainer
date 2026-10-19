@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { signIn } from '../cloud'
 import { Btn, Corners, NoticeHead, SystemText } from '../ui/components'
+import { LegalSheet } from './Legal'
 
 export function Login() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [legal, setLegal] = useState(false)
   return (
     <div className="safe-top safe-bottom relative z-10 mx-auto flex min-h-full max-w-md flex-col items-center justify-center px-6">
       <div className="sys-panel anim-open w-full px-6 pb-7 pt-5 text-center">
@@ -20,7 +22,8 @@ export function Login() {
           {busy ? 'Connecting…' : 'Sign in with Google'}
         </Btn>
         {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
-        <p className="mt-5 text-[11px] text-mute">Only your progress is stored. No posts, contacts or email access.</p>
+        <p className="mt-5 text-[11px] text-mute">Only your progress is stored. No posts, contacts or email access. For ages 13+. <button className="text-sys underline" onClick={() => setLegal(true)}>Privacy & Terms</button></p>
+        {legal && <LegalSheet onClose={() => setLegal(false)} />}
       </div>
     </div>
   )

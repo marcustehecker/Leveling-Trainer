@@ -141,7 +141,16 @@ export function useGame(uid: string | null) {
     if (next !== ref.current) commit(next)
   }, [commit])
 
-  return { state, ready, commit, update, sync }
+  /** Stop syncing and erase this device's copy (used before deleting the account). */
+  const wipe = useCallback(async () => {
+    clearTimeout(timer.current)
+    dirty.current = false
+    ref.current = null
+    await saveLocal(keyFor(uid), null)
+    await saveLocal(LEGACY_KEY, null)
+  }, [uid])
+
+  return { state, ready, commit, update, sync, wipe }
 }
 
 export function exportBackup(s: GameState) {

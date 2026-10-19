@@ -6,14 +6,15 @@ import type { Equipment, GameState } from '../core/types'
 import { Btn, Panel } from '../ui/components'
 import { advanceTo } from '../core/engine'
 import { exportBackup, nowIso, readBackup, todayKey } from '../store'
-import { cloudEnabled, signOutAccount, type Account } from '../cloud'
+import { cloudEnabled, deleteAccount, signOutAccount, type Account } from '../cloud'
+import { LegalSheet } from './Legal'
 
 const EQUIP: { v: Equipment; label: string }[] = [
   { v: 'none', label: 'Bodyweight' }, { v: 'dumbbells', label: 'Dumbbells' }, { v: 'bands', label: 'Bands' },
   { v: 'pullupBar', label: 'Pull-up bar' }, { v: 'gym', label: 'Full gym' },
 ]
 
-export function HunterTab({ s, update, commit, account }: { s: GameState; update: (fn: (s: GameState) => GameState) => void; commit: (s: GameState | null) => void; account: Account | null }) {
+export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; update: (fn: (s: GameState) => GameState) => void; commit: (s: GameState | null) => void; account: Account | null; wipe: () => Promise<void> }) {
   const today = todayKey()
   const [msg, setMsg] = useState<string | null>(null)
   const [days, setDays] = useState(s.profile.trainingDays)
@@ -22,6 +23,8 @@ export function HunterTab({ s, update, commit, account }: { s: GameState; update
   const [bedtime, setBedtime] = useState(s.profile.bedtime ?? '')
   const [name, setName] = useState(s.profile.name)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [legal, setLegal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const sick = s.sickDays.includes(today)
   const titles = availableTitles(s)
   const dirty = name !== s.profile.name || minutes !== s.profile.sessionMinutes || bedtime !== (s.profile.bedtime ?? '') ||
@@ -119,6 +122,15 @@ export function HunterTab({ s, update, commit, account }: { s: GameState; update
             } catch (err) { setMsg((err as Error).message) }
           }} />
           <Btn variant="danger" onClick={() => { if (confirm('Erase all progress and start over? This cannot be undone.')) commit(null) }}>Reset Everything</Btn>
+          {cloudEnabled && account && (
+            <Btn variant="danger" disabled={deleting} onClick={async () => {
+              if (!confirm('Permanently delete your account and all progress? This cannot be undone.')) return
+              if (!confirm('Are you sure? Your hunter, ranks and history will be gone for good.')) return
+              setDeleting(true)
+              try { await wipe(); await deleteAccount(account.uid) } catch (e) { setMsg(`Delete failed: ${(e as Error).message}`); setDeleting(false) }
+            }}>{deleting ? 'Deleting…' : 'Delete My Account'}</Btn>
+          )}
+          <Btn variant="ghost" onClick={() => setLegal(true)}>Privacy & Terms</Btn>
         </div>
       </Panel>
 
@@ -134,6 +146,7 @@ export function HunterTab({ s, update, commit, account }: { s: GameState; update
           <li>This is a game score, not medical advice.</li>
         </ul>
       </Panel>
+      {legal && <LegalSheet onClose={() => setLegal(false)} />}
     </div>
   )
 }

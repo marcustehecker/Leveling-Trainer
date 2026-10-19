@@ -4,7 +4,8 @@ import type { User } from 'firebase/auth'
 import { firebaseConfig } from './firebaseConfig'
 import type { GameState } from './core/types'
 
-export const cloudEnabled = firebaseConfig !== null
+// VITE_LOCAL_ONLY=1 builds a sign-in-free copy for testing.
+export const cloudEnabled = firebaseConfig !== null && !import.meta.env.VITE_LOCAL_ONLY
 
 export interface Account { uid: string; email: string | null; name: string | null; photo: string | null }
 
@@ -68,4 +69,21 @@ export async function pushState(uid: string, s: GameState | null): Promise<void>
   if (!s) { await fs.deleteDoc(ref); return }
   const body: CloudDoc = { state: JSON.stringify(s), updatedAt: s.updatedAt ?? Date.now(), version: 1 }
   await fs.setDoc(ref, body)
+}
+
+/** Permanently delete the cloud save and the Google-linked account. */
+export async function deleteAccount(uid: string): Promise<void> {
+  const { app, auth, fs } = await load()
+  const a = auth.getAuth(app)
+  const user = a.currentUser
+  if (!user || user.uid !== uid) throw new Error('Sign in again before deleting your account.')
+  await fs.deleteDoc(fs.doc(fs.getFirestore(app), 'hunters', uid))
+  try {
+    await auth.deleteUser(user)
+  } catch (e) {
+    // Firebase requires a recent sign-in to delete an account.
+    if ((e as { code?: string }).code !== 'auth/requires-recent-login') throw e
+    await auth.reauthenticateWithPopup(user, new auth.GoogleAuthProvider())
+    await auth.deleteUser(user)
+  }
 }

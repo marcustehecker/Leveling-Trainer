@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { logWorkout, questsFor } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
 import { describeTarget, generatePlan, planDayFor, type PlanDay } from '../core/plan'
@@ -267,8 +268,8 @@ function NumIn({ value, onChange, label }: { value: number; onChange: (v: number
 
 function ExercisePicker({ s, pattern, onPick, onClose }: { s: GameState; pattern?: string; onPick: (e: Exercise) => void; onClose: () => void }) {
   const list = EXERCISES.filter((e) => hasEquipment(e, s.profile.equipment) && (!pattern || e.pattern === pattern))
-  return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/70" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-end bg-black/70" onClick={onClose}>
       <div className="safe-bottom mx-auto max-h-[75vh] w-full max-w-md overflow-y-auto rounded-t-lg border border-edge bg-panel p-4" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between"><h2 className="sys-title text-sm text-sys">{pattern ? 'Swap Exercise' : 'Add Exercise'}</h2><button className="text-mute" onClick={onClose}>Close</button></div>
         <div className="grid gap-2">
@@ -279,7 +280,8 @@ function ExercisePicker({ s, pattern, onPick, onClose }: { s: GameState; pattern
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
