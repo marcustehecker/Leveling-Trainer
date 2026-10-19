@@ -68,7 +68,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-7 pt-3">
       <div className="grid grid-cols-3 gap-2">
         {(['plan', 'library', 'history'] as const).map((v) => (
           <button key={v} onClick={() => setView(v)} className={`sys-title h-10 rounded border text-xs ${view === v ? 'border-sys bg-sys/15 text-glow' : 'border-edge text-mute'}`}>
@@ -173,7 +173,7 @@ function Logger({ s, draft, setDraft, onSubmit }: { s: GameState; draft: Draft; 
   }
 
   return (
-    <div className="grid gap-4 pb-28">
+    <div className="grid gap-7 pt-3 pb-28">
       <Panel title={draft.title} right={<button className="sys-title text-xs text-mute" onClick={() => { if (confirm('Discard this workout?')) setDraft(null) }}>Discard</button>}>
         <p className="text-xs text-mute">Tick each set when done. Edit reps{units ? ` and weight (${weightUnit(units)})` : ''} to what you actually did.</p>
       </Panel>
@@ -286,7 +286,7 @@ function ExercisePicker({ s, pattern, onPick, onClose }: { s: GameState; pattern
 function Library({ s }: { s: GameState }) {
   const groups: Record<string, string> = { squat: 'Squat', hinge: 'Hinge', push: 'Push', vpush: 'Overhead Press', pull: 'Row', vpull: 'Pull-down / Pull-up', lunge: 'Single Leg', core: 'Core', cardio: 'Cardio', mobility: 'Mobility & Balance' }
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-7 pt-3">
       {Object.entries(groups).map(([p, label]) => (
         <Panel key={p} title={label}>
           <div className="grid gap-2">

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { dismissCeremony } from './core/engine'
-import { useGame } from './store'
+import { useAccount, useGame, type SyncStatus } from './store'
+import { cloudEnabled, type Account } from './cloud'
+import { Login } from './screens/Login'
 import { Onboarding } from './screens/Onboarding'
 import { SystemTab } from './screens/SystemTab'
 import { TrainingTab } from './screens/TrainingTab'
@@ -19,8 +21,29 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'hunter', label: 'Hunter', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21c1-4 4-6 8-6s7 2 8 6' },
 ]
 
+function Particles() {
+  const dots = Array.from({ length: 18 }, (_, i) => ({
+    left: `${(i * 53) % 100}%`, delay: `${(i * 1.7) % 12}s`, dur: `${10 + ((i * 7) % 9)}s`, size: i % 3 === 0 ? 3 : 2,
+  }))
+  return <div className="particles" aria-hidden>{dots.map((d, i) => <i key={i} style={{ left: d.left, animationDelay: d.delay, animationDuration: d.dur, width: d.size, height: d.size }} />)}</div>
+}
+
+const SYNC_LABEL: Record<SyncStatus, string> = { local: 'On device', synced: 'Synced', saving: 'Saving…', offline: 'Offline' }
+
 export default function App() {
-  const { state, ready, commit, update } = useGame()
+  const auth = useAccount()
+  if (auth.status === 'loading') return <><Particles /><Splash /></>
+  if (cloudEnabled && auth.status === 'signedOut') return <><Particles /><Login /></>
+  const account = auth.status === 'signedIn' ? auth.account : null
+  return <Game key={account?.uid ?? 'local'} account={account} />
+}
+
+function Splash() {
+  return <div className="flex h-full items-center justify-center"><span className="sys-title glow-text anim-flicker text-white">[System loading…]</span></div>
+}
+
+function Game({ account }: { account: Account | null }) {
+  const { state, ready, commit, update, sync } = useGame(account?.uid ?? null)
   const [tab, setTab] = useState<Tab>('system')
   const [toast, setToast] = useState<string | null>(null)
 
@@ -28,7 +51,7 @@ export default function App() {
   // Quest clears are a light toast, not a full-screen notification.
   useEffect(() => {
     if (ceremony?.kind === 'questClear') {
-      setToast(`[SYSTEM] Quest complete: ${ceremony.title}${ceremony.xp ? ` +${ceremony.xp} XP` : ''}`)
+      setToast(`[Quest complete: ${ceremony.title}${ceremony.xp ? ` · +${ceremony.xp} EXP` : ''}]`)
       update(dismissCeremony)
     }
   }, [ceremony, update])
@@ -40,37 +63,42 @@ export default function App() {
 
   useEffect(() => { window.scrollTo(0, 0) }, [tab])
 
-  if (!ready) return <div className="flex h-full items-center justify-center"><span className="sys-title anim-flicker text-glow">[SYSTEM] Loading…</span></div>
-  if (!state) return <Onboarding onDone={(s) => { commit(s); setTab('system') }} />
+  if (!ready) return <><Particles /><Splash /></>
+  if (!state) return <><Particles /><div className="relative z-10 h-full"><Onboarding defaultName={account?.name?.split(' ')[0] ?? ''} onDone={(s) => { commit(s); setTab('system') }} /></div></>
 
   return (
-    <div className="mx-auto min-h-full max-w-md">
-      <header className="safe-top sticky top-0 z-10 flex items-center justify-between border-b border-edge/60 bg-void/90 px-4 pb-3 backdrop-blur">
-        <span className="sys-title glow-text text-lg text-glow">The System</span>
-        <span className="sys-title text-xs text-mute">{TABS.find((t) => t.id === tab)?.label}</span>
+    <div className="relative mx-auto min-h-full max-w-md">
+      <Particles />
+      <header className="safe-top sticky top-0 z-20 flex items-center justify-between border-b border-sky-200/25 bg-[#020617]/85 px-4 pb-3 backdrop-blur">
+        <span className="sys-title glow-text text-lg text-white">The System</span>
+        <span className="sys-title flex items-center gap-2 text-[10px] text-mute">
+          <span className={`h-1.5 w-1.5 rounded-full ${sync === 'synced' ? 'bg-ok shadow-[0_0_6px_#6ee7b7]' : sync === 'offline' ? 'bg-danger' : sync === 'saving' ? 'bg-sys anim-flicker' : 'bg-mute'}`} />
+          {SYNC_LABEL[sync]}
+        </span>
       </header>
-      <main className="px-4 pb-28 pt-4">
+      <main className="relative z-10 px-4 pb-28 pt-5">
         {tab === 'system' && <SystemTab s={state} update={update} goTraining={() => setTab('training')} />}
-        {tab === 'training' && <TrainingTab s={state} update={update} onLogged={(m) => { setToast(`[SYSTEM] Training recorded. ${m}`); setTab('system') }} />}
+        {tab === 'training' && <TrainingTab s={state} update={update} onLogged={(m) => { setToast(`[Training recorded. ${m}]`); setTab('system') }} />}
         {tab === 'nutrition' && <NutritionTab s={state} />}
         {tab === 'progress' && <ProgressTab s={state} />}
-        {tab === 'hunter' && <HunterTab s={state} update={update} commit={commit} />}
+        {tab === 'hunter' && <HunterTab s={state} update={update} commit={commit} account={account} />}
       </main>
-      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-void/95 backdrop-blur" aria-label="Main">
+      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-sky-200/30 bg-[#020617]/90 shadow-[0_-8px_24px_rgba(37,99,235,.18)] backdrop-blur" aria-label="Main">
         <div className="mx-auto grid max-w-md grid-cols-5">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}
-              className={`flex h-14 flex-col items-center justify-center gap-1 ${tab === t.id ? 'text-glow' : 'text-mute'}`}>
+              className={`relative flex h-14 flex-col items-center justify-center gap-1 ${tab === t.id ? 'text-white' : 'text-mute'}`}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden
-                style={tab === t.id ? { filter: 'drop-shadow(0 0 6px rgba(34,211,238,.8))' } : undefined}><path d={t.icon} /></svg>
+                style={tab === t.id ? { filter: 'drop-shadow(0 0 6px rgba(96,165,250,1))' } : undefined}><path d={t.icon} /></svg>
               <span className="sys-title text-[10px]">{t.label}</span>
+              {tab === t.id && <span className="absolute top-0 h-0.5 w-8 bg-sky-200 shadow-[0_0_10px_#60a5fa]" />}
             </button>
           ))}
         </div>
       </nav>
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center px-4" role="status">
-          <div className="sys-panel anim-rise max-w-sm px-4 py-3 text-sm text-ink">{toast}</div>
+          <div className="sys-panel anim-open max-w-sm px-4 py-3 text-center text-sm text-white">{toast}</div>
         </div>
       )}
       {ceremony && ceremony.kind !== 'questClear' && <CeremonyOverlay c={ceremony} onClose={() => update(dismissCeremony)} />}

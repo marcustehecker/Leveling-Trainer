@@ -6,13 +6,14 @@ import type { Equipment, GameState } from '../core/types'
 import { Btn, Panel } from '../ui/components'
 import { advanceTo } from '../core/engine'
 import { exportBackup, nowIso, readBackup, todayKey } from '../store'
+import { cloudEnabled, signOutAccount, type Account } from '../cloud'
 
 const EQUIP: { v: Equipment; label: string }[] = [
   { v: 'none', label: 'Bodyweight' }, { v: 'dumbbells', label: 'Dumbbells' }, { v: 'bands', label: 'Bands' },
   { v: 'pullupBar', label: 'Pull-up bar' }, { v: 'gym', label: 'Full gym' },
 ]
 
-export function HunterTab({ s, update, commit }: { s: GameState; update: (fn: (s: GameState) => GameState) => void; commit: (s: GameState | null) => void }) {
+export function HunterTab({ s, update, commit, account }: { s: GameState; update: (fn: (s: GameState) => GameState) => void; commit: (s: GameState | null) => void; account: Account | null }) {
   const today = todayKey()
   const [msg, setMsg] = useState<string | null>(null)
   const [days, setDays] = useState(s.profile.trainingDays)
@@ -34,7 +35,20 @@ export function HunterTab({ s, update, commit }: { s: GameState; update: (fn: (s
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-7 pt-3">
+      {cloudEnabled && account && (
+        <Panel title="Account">
+          <div className="flex items-center gap-3">
+            {account.photo && <img src={account.photo} alt="" referrerPolicy="no-referrer" className="h-10 w-10 rounded-full border border-sky-200/60" />}
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-white">{account.name ?? 'Player'}</div>
+              <div className="truncate text-xs text-mute">{account.email}</div>
+            </div>
+            <Btn variant="ghost" onClick={() => { if (confirm('Sign out? Your progress stays saved to your account.')) void signOutAccount() }}>Sign out</Btn>
+          </div>
+          <p className="mt-3 text-xs text-mute">Progress is saved to your Google account and syncs to any device you sign in on.</p>
+        </Panel>
+      )}
       <Panel title="Condition" tone={sick ? undefined : undefined}>
         <p className="text-sm text-mute">Feeling sick or injured? Mark today and no XP will be lost. Never train through pain to protect your rank. {B.SICK_DAYS_PER_30 - sickDaysUsed(s, today)} of {B.SICK_DAYS_PER_30} left this month.</p>
         <Btn className="mt-3 w-full" variant={sick ? 'ghost' : 'primary'} onClick={() => {
@@ -92,7 +106,7 @@ export function HunterTab({ s, update, commit }: { s: GameState; update: (fn: (s
       </Panel>
 
       <Panel title="Data">
-        <p className="mb-3 text-sm text-mute">Everything is stored only on this device. Add the site to your Home Screen so iOS keeps it, and download a backup now and then.</p>
+        <p className="mb-3 text-sm text-mute">{cloudEnabled && account ? 'Progress syncs to your account automatically. A backup file is an extra safety copy.' : 'Everything is stored only on this device. Add the site to your Home Screen so iOS keeps it, and download a backup now and then.'}</p>
         <div className="grid gap-2">
           <Btn variant="ghost" onClick={() => exportBackup(s)}>Download Backup</Btn>
           <Btn variant="ghost" onClick={() => fileRef.current?.click()}>Restore Backup</Btn>

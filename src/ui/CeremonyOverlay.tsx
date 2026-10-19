@@ -1,6 +1,6 @@
 import { ACHIEVEMENT_BY_ID } from '../core/achievements'
 import type { Ceremony } from '../core/types'
-import { Btn, RANK_COLOR, RANK_NAME, RankEmblem, SystemText } from './components'
+import { Btn, Corners, NoticeHead, RANK_NAME, RankEmblem, SystemText } from './components'
 
 export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => void }) {
   let tone: 'sys' | 'danger' | 'rare' = 'sys'
@@ -12,7 +12,7 @@ export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => vo
     case 'levelUp':
       heading = 'Level Up'
       body = `[SYSTEM] Level ${c.from} → ${c.to}. Your strength grows.`
-      visual = <div className="sys-title glow-text anim-glow text-7xl text-glow">{c.to}</div>
+      visual = <div className="sys-title glow-text anim-glow text-7xl text-white">{c.to}</div>
       break
     case 'levelDown':
       tone = 'danger'
@@ -46,14 +46,14 @@ export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => vo
     case 'achievement': {
       const a = ACHIEVEMENT_BY_ID[c.id]
       tone = a?.rare ? 'rare' : 'sys'
-      heading = 'Achievement'
-      body = `[SYSTEM] ${a?.name ?? c.id}. ${a?.description ?? ''}${a?.title ? ` Title unlocked: “${a.title}”.` : ''}`
+      heading = a?.name ?? 'Achievement'
+      body = `[SYSTEM] Achievement unlocked. ${a?.description ?? ''}${a?.title ? ` Title acquired: “${a.title}”.` : ''}`
       break
     }
     case 'questClear':
       heading = 'Quest Complete'
       body = `[SYSTEM] ${c.title}. ${c.xp > 0 ? `+${c.xp} XP.` : ''}`
-      visual = <div className="sys-title glow-text text-5xl text-glow">✓</div>
+      visual = <div className="sys-title glow-text text-5xl text-white">✓</div>
       break
     case 'trialUnlocked':
       tone = 'rare'
@@ -63,14 +63,15 @@ export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => vo
       break
   }
 
-  const color = tone === 'danger' ? '#ef4444' : tone === 'rare' ? (c.kind === 'rankUp' ? RANK_COLOR[c.rank] : '#a855f7') : '#22d3ee'
+  const label = c.kind === 'penalty' ? 'Penalty' : c.kind === 'warning' || c.kind === 'demotion' ? 'Alert' : c.kind === 'rankUp' ? 'Rank Up' : 'Notification'
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={heading} onClick={onClose}>
-      <div className={`sys-panel ${tone === 'sys' ? '' : tone} anim-rise w-full max-w-sm p-6 text-center`} onClick={(e) => e.stopPropagation()}>
-        <div className="sys-title mb-1 text-[10px] text-mute">Notification</div>
-        <h2 className="sys-title mb-4 text-2xl" style={{ color, textShadow: `0 0 14px ${color}88` }}>{heading}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#01040f]/85 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={heading} onClick={onClose}>
+      <div className={`sys-panel ${tone === 'sys' ? '' : tone} anim-open w-full max-w-sm px-6 pb-6 pt-5 text-center`} onClick={(e) => e.stopPropagation()}>
+        <Corners />
+        <NoticeHead label={label} tone={tone === 'sys' ? undefined : tone} />
         {visual && <div className="mb-4 flex justify-center">{visual}</div>}
-        <SystemText key={body} text={body} className="min-h-12 text-sm leading-relaxed text-ink" speed={16} />
+        <div className="sys-title glow-text mb-2 text-xl text-white">[{heading}]</div>
+        <SystemText key={body} text={body.replace(/^\[SYSTEM\] /, '')} className="min-h-12 text-sm leading-relaxed text-sky-100" speed={16} />
         <Btn className="mt-5 w-full" variant={tone === 'danger' ? 'danger' : tone === 'rare' ? 'rare' : 'primary'} onClick={onClose}>Confirm</Btn>
       </div>
     </div>

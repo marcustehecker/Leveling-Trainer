@@ -11,7 +11,7 @@ const BASICS = [
 
 export function NutritionTab({ s }: { s: GameState }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-7 pt-3">
       <Panel title="Provisions" right={<Tag color="#8a9bb4">Stage 4</Tag>}>
         <p className="text-sm text-mute">Meal ideas, recipes, grocery lists and weekly meal plans arrive in Stage 4. Nutrition here will never be a punishment: no calorie targets unless you ask, and no rewards for eating less.</p>
       </Panel>

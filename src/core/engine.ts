@@ -146,6 +146,7 @@ function gainXp(s: GameState, date: DateKey, now: string, amount: number, reason
   s.xp += actual
   s.lifetimeXp += actual
   s.xpLog.unshift({ id: nextId(s, 'x'), date, amount: actual, kind: 'gain', reason: actual < amount ? `${reason} (daily cap)` : reason })
+  if (s.xpLog.length > 600) s.xpLog.length = 600
   afterXpChange(s, date, now, prev)
   return actual
 }
@@ -484,6 +485,8 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
   const w: WorkoutLog = { ...clone(input), id: nextId(s, 'w'), date: today, loggedAt: now, planned, xpAwarded: xp, prs }
   s.workouts.unshift(w)
+  // Bounded so a cloud save stays well under Firestore's 1 MB document limit.
+  if (s.workouts.length > 400) s.workouts.length = 400
   log(s, today, now, `[SYSTEM] Training recorded: ${input.title}. +${xp} XP.${prs.length ? ` New record: ${prs.join(', ')}.` : ''}`, 'gain')
 
   // Quests advanced by this workout

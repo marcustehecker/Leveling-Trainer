@@ -49,9 +49,9 @@ function toggleEquipment(arr: Equipment[], v: Equipment): Equipment[] {
 
 const input = 'h-12 rounded border border-edge bg-panel-2 px-3 text-ink outline-none focus:border-sys'
 
-export function Onboarding({ onDone }: { onDone: (s: GameState) => void }) {
+export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState) => void; defaultName?: string }) {
   const [step, setStep] = useState(0)
-  const [d, setD] = useState<Draft>(initial)
+  const [d, setD] = useState<Draft>({ ...initial, name: defaultName })
   const [result, setResult] = useState<GameState | null>(null)
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }))
   const setA = (patch: Partial<Assessment>) => setD((x) => ({ ...x, assessment: { ...x.assessment, ...patch } }))
@@ -64,7 +64,7 @@ export function Onboarding({ onDone }: { onDone: (s: GameState) => void }) {
       title: 'Player Detected',
       body: (
         <div className="grid gap-5">
-          <SystemText className="text-lg leading-relaxed text-ink" text="[SYSTEM] A new Player has been detected. You have been chosen to become a Hunter. Register to begin." />
+          <SystemText className="text-lg leading-relaxed text-ink" text="[You have met the conditions to become a Player. Will you accept?] Enter your Hunter name to register." />
           <Field label="Hunter name">
             <input className={input} value={d.name} maxLength={24} placeholder="Enter your name" onChange={(e) => set({ name: e.target.value })} autoFocus />
           </Field>
@@ -165,7 +165,7 @@ export function Onboarding({ onDone }: { onDone: (s: GameState) => void }) {
       title: 'Initial Assessment',
       body: (
         <div className="grid gap-5">
-          <SystemText className="text-sm text-mute" text="[SYSTEM] Measuring current ability. Answer honestly. This sets your starting stats, not your rank." />
+          <SystemText className="text-sm text-mute" text="[Measuring current ability. Answer honestly. This sets your starting stats, not your rank.]" />
           <Field label="Push-ups in a row, good form (0 is fine)"><Stepper label="push-ups" value={d.assessment.pushups} max={100} onChange={(v) => setA({ pushups: v })} /></Field>
           <Field label="Plank hold, seconds"><Stepper label="plank seconds" value={d.assessment.plankSeconds} max={600} step={5} onChange={(v) => setA({ plankSeconds: v })} /></Field>
           <Field label="Cardio fitness">
@@ -223,7 +223,7 @@ export function Onboarding({ onDone }: { onDone: (s: GameState) => void }) {
         <div className="flex-1"><Bar value={step + 1} max={steps.length} height={4} label="Registration progress" /></div>
         <span className="sys-title text-xs text-mute">{step + 1}/{steps.length}</span>
       </div>
-      <Panel title={cur.title} className="anim-rise" key={step}>{cur.body}</Panel>
+      <Panel title={cur.title} className="mt-4" open key={step}>{cur.body}</Panel>
       <div className="mt-auto flex gap-3 pt-6">
         {step > 0 && <Btn variant="ghost" onClick={() => setStep(step - 1)}>Back</Btn>}
         <Btn className="flex-1" disabled={cur.valid === false} onClick={() => (last ? finish() : setStep(step + 1))}>
@@ -238,20 +238,20 @@ function AssessmentReveal({ s, onEnter }: { s: GameState; onEnter: () => void })
   const [shown, setShown] = useState(false)
   return (
     <div className="safe-top safe-bottom mx-auto flex min-h-full max-w-md flex-col gap-4 px-4">
-      <Panel title="Assessment Complete" className="anim-rise">
-        <SystemText className="text-ink" text={`[SYSTEM] Assessment complete. Player ${s.profile.name}, your journey begins now.`} onDone={() => setShown(true)} />
+      <Panel title="Notification" className="mt-5" open>
+        <SystemText className="text-ink" text={`[Assessment complete. Player ${s.profile.name}, your journey begins now.]`} onDone={() => setShown(true)} />
       </Panel>
       {shown && (
         <>
-          <Panel className="anim-rise flex items-center gap-4">
+          <Panel className="anim-rise"><div className="flex items-center gap-4">
             <RankEmblem rank="E" size={84} />
             <div>
               <div className="sys-title text-xs text-mute">Rank assigned</div>
               <div className="sys-title text-3xl text-ink">E-Rank</div>
               <div className="text-sm text-mute">Everyone begins here. Your growth will decide the rest.</div>
             </div>
-          </Panel>
-          <Panel title="Starting Stats" className="anim-rise">
+          </div></Panel>
+          <Panel title="Status" className="mt-3" open>
             <div className="grid gap-3">
               {STAT_IDS.map((id, i) => (
                 <div key={id} className="anim-rise" style={{ animationDelay: `${i * 120}ms` }}>

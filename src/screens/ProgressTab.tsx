@@ -38,7 +38,7 @@ export function ProgressTab({ s }: { s: GameState }) {
   const units = s.profile.units
   const records = Object.entries(s.records).filter(([id]) => EXERCISE_BY_ID[id])
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-7 pt-3">
       <Panel title="Experience" right={<span className="text-xs text-mute">Lifetime {s.lifetimeXp.toLocaleString()} XP</span>}>
         <XpChart s={s} />
         <p className="mt-2 text-xs text-mute">Red dots mark days XP was lost.</p>

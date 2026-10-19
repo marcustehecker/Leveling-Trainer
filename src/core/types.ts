@@ -170,4 +170,6 @@ export interface GameState {
   log: LogEntry[]
   ceremonies: Ceremony[]
   seq: number
+  /** Wall-clock ms of the last change; newest copy wins when syncing. */
+  updatedAt?: number
 }

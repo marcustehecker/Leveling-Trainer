@@ -9,19 +9,36 @@ export const RANK_NAME: Record<RankId, string> = {
   E: 'Beginner Hunter', D: 'Developing Hunter', C: 'Intermediate Hunter', B: 'Advanced Hunter', A: 'Elite Hunter', S: 'Exceptional Hunter',
 }
 
-export function Panel({ children, className = '', tone, title, right }: {
-  children: ReactNode; className?: string; tone?: 'danger' | 'rare'; title?: string; right?: ReactNode
+export function Corners() {
+  return <><i className="sys-corner tl" /><i className="sys-corner tr" /><i className="sys-corner bl" /><i className="sys-corner br" /></>
+}
+
+/** A System window: framed glass panel with an optional title plaque on the top edge. */
+export function Panel({ children, className = '', tone, title, right, open }: {
+  children: ReactNode; className?: string; tone?: 'danger' | 'rare'; title?: string; right?: ReactNode; open?: boolean
 }) {
   return (
-    <section className={`sys-panel ${tone ?? ''} p-4 ${className}`}>
+    <section className={`sys-panel ${tone ?? ''} px-4 pb-4 ${title ? 'pt-0' : 'pt-4'} ${open ? 'anim-open' : ''} ${className}`}>
+      <Corners />
       {title && (
-        <header className="mb-3 flex items-center justify-between gap-2">
-          <h2 className={`sys-title text-sm ${tone === 'danger' ? 'text-danger' : tone === 'rare' ? 'text-rare' : 'text-sys'}`}>{title}</h2>
-          {right}
+        <header className="relative -mt-3.5 mb-3 flex items-center justify-center">
+          <h2 className={`sys-plaque sys-title glow-text text-sm text-white`}>{title}</h2>
+          {right && <div className="absolute right-0 top-[18px] text-right">{right}</div>}
         </header>
       )}
-      {children}
+      <div className={title && right ? 'pt-3' : ''}>{children}</div>
     </section>
+  )
+}
+
+/** Notification header: ⓘ NOTIFICATION over a rule, as in the System's pop-ups. */
+export function NoticeHead({ label, tone }: { label: string; tone?: 'danger' | 'rare' }) {
+  const color = tone === 'danger' ? '#fecaca' : tone === 'rare' ? '#e9d5ff' : '#dbeafe'
+  return (
+    <div className="sys-notice-head" style={{ color }}>
+      <span className="sys-notice-icon">{tone === 'danger' ? '!' : 'i'}</span>
+      <span className="sys-title glow-text text-lg text-white">{label}</span>
+    </div>
   )
 }
 
@@ -81,14 +98,14 @@ export function Btn({ children, onClick, variant = 'primary', className = '', di
   children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger' | 'rare'; className?: string; disabled?: boolean; type?: 'button' | 'submit'
 }) {
   const styles = {
-    primary: 'bg-sys/15 text-glow border-sys/60 hover:bg-sys/25',
-    ghost: 'bg-transparent text-mute border-edge hover:text-ink',
-    danger: 'bg-danger/15 text-danger border-danger/60 hover:bg-danger/25',
-    rare: 'bg-rare/15 text-rare border-rare/60 hover:bg-rare/25',
+    primary: 'bg-blue-600/25 text-white border-sky-200/80 shadow-[0_0_12px_rgba(59,130,246,.55),inset_0_0_10px_rgba(147,197,253,.25)] glow-soft hover:bg-blue-500/35',
+    ghost: 'bg-blue-950/40 text-glow border-edge hover:border-sys hover:text-white',
+    danger: 'bg-red-600/25 text-red-100 border-red-200/80 shadow-[0_0_12px_rgba(239,68,68,.5)] hover:bg-red-500/35',
+    rare: 'bg-purple-600/25 text-purple-100 border-purple-200/80 shadow-[0_0_12px_rgba(168,85,247,.5)] hover:bg-purple-500/35',
   }[variant]
   return (
     <button type={type} disabled={disabled} onClick={onClick}
-      className={`sys-title min-h-11 rounded border px-4 py-2 text-sm transition active:scale-[.98] disabled:opacity-40 ${styles} ${className}`}>
+      className={`sys-title min-h-11 rounded-sm border px-4 py-2 text-sm transition active:scale-[.98] disabled:opacity-40 ${styles} ${className}`}>
       {children}
     </button>
   )

@@ -3,8 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { advanceTo } from './core/engine'
 import { toKey } from './core/dates'
 import type { DateKey, GameState } from './core/types'
+import { cloudEnabled, pullState, pushState, watchAccount, type Account } from './cloud'
 
-const KEY = 'the-system:state'
+const LEGACY_KEY = 'the-system:state'
+const keyFor = (uid: string | null) => (uid ? `the-system:state:${uid}` : LEGACY_KEY)
 
 /** `?date=YYYY-MM-DD` lets you preview another day (for testing streaks and penalties). */
 function override(): DateKey | null {
@@ -25,57 +27,121 @@ export function nowIso(): string {
   return t.toISOString()
 }
 
-export async function loadState(): Promise<GameState | null> {
-  try {
-    return ((await get(KEY)) as GameState | undefined) ?? null
-  } catch {
-    return null
-  }
+async function loadLocal(key: string): Promise<GameState | null> {
+  try { return ((await get(key)) as GameState | undefined) ?? null } catch { return null }
 }
 
-export async function saveState(s: GameState | null) {
-  try {
-    if (s) await set(KEY, s)
-    else await del(KEY)
-  } catch (e) {
-    console.error('Save failed', e)
-  }
+async function saveLocal(key: string, s: GameState | null) {
+  try { if (s) await set(key, s); else await del(key) } catch (e) { console.error('Save failed', e) }
 }
 
-export function useGame() {
+export type SyncStatus = 'local' | 'synced' | 'saving' | 'offline'
+export type AuthState = { status: 'loading' } | { status: 'signedOut' } | { status: 'signedIn'; account: Account }
+
+/** Tracks the signed-in Google account (or reports local-only mode when cloud isn't configured). */
+export function useAccount(): AuthState {
+  const [auth, setAuth] = useState<AuthState>(cloudEnabled ? { status: 'loading' } : { status: 'signedOut' })
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let unsub: (() => void) | undefined
+    let cancelled = false
+    watchAccount((a) => setAuth(a ? { status: 'signedIn', account: a } : { status: 'signedOut' }))
+      .then((u) => { if (cancelled) u(); else unsub = u })
+      .catch(() => setAuth({ status: 'signedOut' }))
+    return () => { cancelled = true; unsub?.() }
+  }, [])
+  return auth
+}
+
+/**
+ * Game state for one player. With a uid, progress is cached on the device and
+ * mirrored to the cloud; the newest copy wins when both exist.
+ */
+export function useGame(uid: string | null) {
   const [state, setStateRaw] = useState<GameState | null>(null)
   const [ready, setReady] = useState(false)
+  const [sync, setSync] = useState<SyncStatus>(uid ? 'saving' : 'local')
   const ref = useRef<GameState | null>(null)
+  const dirty = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const commit = useCallback((s: GameState | null) => {
+  const push = useCallback(async () => {
+    if (!uid || !dirty.current) return
+    setSync('saving')
+    try {
+      await pushState(uid, ref.current)
+      dirty.current = false
+      setSync('synced')
+    } catch {
+      setSync('offline')
+    }
+  }, [uid])
+
+  const commit = useCallback((s: GameState | null, touch = true) => {
+    if (s && touch) s = { ...s, updatedAt: Date.now() }
     ref.current = s
     setStateRaw(s)
-    void saveState(s)
-  }, [])
+    void saveLocal(keyFor(uid), s)
+    if (uid) {
+      dirty.current = true
+      clearTimeout(timer.current)
+      timer.current = setTimeout(() => void push(), 1500)
+    }
+  }, [uid, push])
+
+  useEffect(() => {
+    let cancelled = false
+    setReady(false)
+    ;(async () => {
+      let local = await loadLocal(keyFor(uid))
+      // First sign-in on a device that already has progress: adopt it.
+      if (uid && !local) local = await loadLocal(LEGACY_KEY)
+      let chosen = local
+      if (uid) {
+        try {
+          const remote = await pullState(uid)
+          if (remote && (!local || (remote.updatedAt ?? 0) >= (local.updatedAt ?? 0))) chosen = remote
+          dirty.current = chosen !== remote
+          setSync(dirty.current ? 'saving' : 'synced')
+        } catch {
+          dirty.current = !!local
+          setSync('offline')
+        }
+      }
+      if (cancelled) return
+      const advanced = chosen ? advanceTo(chosen, todayKey(), nowIso()) : null
+      ref.current = advanced
+      setStateRaw(advanced)
+      void saveLocal(keyFor(uid), advanced)
+      if (uid && advanced && (dirty.current || advanced !== chosen)) { dirty.current = true; void push() }
+      setReady(true)
+    })()
+    return () => { cancelled = true }
+  }, [uid, push])
 
   useEffect(() => {
     void navigator.storage?.persist?.().catch(() => {})
-    loadState().then((s) => {
-      commit(s ? advanceTo(s, todayKey(), nowIso()) : null)
-      setReady(true)
-    })
-    // Day rollover while the app stays open in the background.
     const onVis = () => {
-      if (document.visibilityState === 'visible' && ref.current) {
+      if (document.visibilityState === 'hidden') { void push(); return }
+      if (ref.current) {
         const next = advanceTo(ref.current, todayKey(), nowIso())
         if (next !== ref.current) commit(next)
       }
     }
+    const onOnline = () => void push()
     document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('online', onOnline)
     const t = setInterval(onVis, 60_000)
-    return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(t) }
-  }, [commit])
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', onOnline); clearInterval(t) }
+  }, [commit, push])
 
   const update = useCallback((fn: (s: GameState) => GameState) => {
-    if (ref.current) commit(fn(ref.current))
+    if (!ref.current) return
+    const next = fn(ref.current)
+    if (next !== ref.current) commit(next)
   }, [commit])
 
-  return { state, ready, commit, update }
+  return { state, ready, commit, update, sync }
 }
 
 export function exportBackup(s: GameState) {

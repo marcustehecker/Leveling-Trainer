@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { RANK_XP } from '../core/balance'
 import { demotionDaysLeft, levelInfo, powerRating, progressQuest, promotionStatus, questsFor, STAT_IDS, statLevel, statRank } from '../core/engine'
 import type { GameState, Quest } from '../core/types'
@@ -5,82 +6,131 @@ import { Bar, Btn, Panel, RANK_COLOR, RANK_NAME, RankEmblem, Tag } from '../ui/c
 import { nowIso, todayKey } from '../store'
 import { STAT_ABBR, STAT_COLOR, STAT_LABEL } from './labels'
 
-const ORDER: Quest['type'][] = ['trial', 'penalty', 'main', 'side', 'recovery', 'habit', 'sleep', 'weekly']
+const DAILY: Quest['type'][] = ['main', 'side', 'recovery', 'habit', 'sleep']
 
 export function SystemTab({ s, update, goTraining }: { s: GameState; update: (fn: (s: GameState) => GameState) => void; goTraining: () => void }) {
   const today = todayKey()
   const lv = levelInfo(s.xp)
   const promo = promotionStatus(s)
   const warn = demotionDaysLeft(s, today)
-  const quests = questsFor(s, today).sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type))
-  const daily = quests.filter((q) => ['main', 'side', 'habit', 'recovery', 'sleep'].includes(q.type))
+  const quests = questsFor(s, today)
+  const daily = quests.filter((q) => DAILY.includes(q.type)).sort((a, b) => DAILY.indexOf(a.type) - DAILY.indexOf(b.type))
+  const special = quests.filter((q) => q.type === 'penalty' || q.type === 'trial')
+  const weekly = quests.find((q) => q.type === 'weekly')
   const cleared = daily.filter((q) => q.status === 'done').length
   const sick = s.sickDays.includes(today)
+  const progress = (id: string, n: number) => update((x) => progressQuest(x, id, n, today, nowIso()))
 
   return (
-    <div className="grid gap-4">
-      <Panel className="anim-rise">
-        <div className="flex items-start gap-4">
-          <RankEmblem rank={s.rank} size={78} />
-          <div className="min-w-0 flex-1">
-            <div className="sys-title text-xs text-mute">Player</div>
-            <div className="truncate text-2xl font-semibold leading-tight">{s.profile.name}</div>
-            {s.equippedTitle && <div className="sys-title text-xs text-rare">「{s.equippedTitle}」</div>}
-            <div className="mt-1 text-sm" style={{ color: RANK_COLOR[s.rank] }}>{s.rank}-Rank · {RANK_NAME[s.rank]}</div>
+    <div className="grid gap-7 pt-3">
+      {/* STATUS WINDOW */}
+      <Panel title="Status" open>
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-4">
+          <div className="text-center">
+            <div className="sys-title glow-text text-6xl leading-none text-white">{lv.level}</div>
+            <div className="sys-title mt-1 text-[11px] text-glow">Level</div>
           </div>
-          <div className="text-right">
-            <div className="sys-title text-xs text-mute">Level</div>
-            <div className="sys-title glow-text text-4xl leading-none text-glow">{lv.level}</div>
-          </div>
+          <dl className="grid gap-1 text-sm">
+            <Row k="Name" v={s.profile.name} />
+            <Row k="Job" v={<span style={{ color: RANK_COLOR[s.rank] }}>{s.rank}-Rank Hunter</span>} />
+            <Row k="Title" v={s.equippedTitle ?? 'None'} />
+          </dl>
         </div>
-        <div className="mt-4">
-          <div className="mb-1 flex justify-between text-xs text-mute">
-            <span>XP {lv.into.toLocaleString()} / {lv.span.toLocaleString()}</span>
-            <span>Total {s.xp.toLocaleString()}</span>
-          </div>
-          <Bar value={lv.into} max={lv.span} height={10} label="XP to next level" />
+
+        <div className="mt-4 grid gap-2">
+          <Gauge label="EXP" value={lv.into} max={lv.span} text={`${lv.into.toLocaleString()} / ${lv.span.toLocaleString()}`} />
+          <Gauge label="Quest" value={cleared} max={Math.max(1, daily.length)} text={`${cleared} / ${daily.length}`} color="linear-gradient(90deg,#0e7490,#22d3ee,#cffafe)" />
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+
+        <div className="my-4 h-px bg-gradient-to-r from-transparent via-sky-200/50 to-transparent" />
+
+        <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
+          {STAT_IDS.map((id) => {
+            const l = statLevel(s.stats[id])
+            return (
+              <div key={id} className="flex items-baseline justify-between">
+                <span className="sys-title text-[13px] text-glow">{STAT_LABEL[id]}:</span>
+                <span className="flex items-baseline gap-1.5">
+                  <span className="sys-title glow-text text-lg text-white">{l}</span>
+                  <span className="sys-title text-[10px]" style={{ color: RANK_COLOR[statRank(l)] }}>{statRank(l)}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="my-4 h-px bg-gradient-to-r from-transparent via-sky-200/50 to-transparent" />
+
+        <div className="grid grid-cols-3 text-center">
           <Metric label="Power" value={powerRating(s).toLocaleString()} />
-          <Metric label="Streak" value={`${s.streak}d`} />
-          <Metric label="Workouts" value={String(s.workouts.length)} />
+          <Metric label="Streak" value={`${s.streak}`} />
+          <Metric label="Total EXP" value={s.xp.toLocaleString()} />
         </div>
       </Panel>
 
       {warn !== null && (
-        <Panel tone="danger" title="Demotion Warning" className="anim-rise">
-          <p className="text-sm">XP has fallen below the {s.rank}-Rank threshold. Earn {(promoNeed(s)).toLocaleString()} XP within <b className="text-danger">{warn} day{warn === 1 ? '' : 's'}</b> or you will be demoted.</p>
+        <Panel tone="danger" title="Warning" open>
+          <p className="text-center text-sm leading-relaxed">[Experience has fallen below the {s.rank}-Rank threshold. Recover {Math.max(0, RANK_XP[s.rank] - s.xp).toLocaleString()} EXP within <b className="text-red-200">{warn} day{warn === 1 ? '' : 's'}</b> or your rank will be demoted.]</p>
         </Panel>
       )}
 
       {sick && (
-        <Panel title="Recovery Status" className="anim-rise">
-          <p className="text-sm text-mute">Marked sick / injured today. No XP will be lost. Rest is the right call.</p>
+        <Panel title="Recovery">
+          <p className="text-center text-sm text-glow">[Condition: Sick / Injured. No EXP will be lost today. Rest is the correct choice.]</p>
         </Panel>
       )}
 
-      <Panel title="Quest Log" right={<span className="sys-title text-xs text-mute">Daily {cleared}/{daily.length}</span>}>
-        <div className="grid gap-3">
-          {quests.length === 0 && <p className="text-sm text-mute">No quests right now.</p>}
-          {quests.map((q) => <QuestCard key={q.id} q={q} onProgress={(n) => update((x) => progressQuest(x, q.id, n, today, nowIso()))} goTraining={goTraining} />)}
+      {special.map((q) => (
+        <Panel key={q.id} tone={q.type === 'penalty' ? 'danger' : 'rare'} title={q.type === 'penalty' ? 'Penalty Quest' : 'Rank Trial'} open>
+          <p className="text-center text-sm">[{q.description}]</p>
+          <div className="mt-3 text-center text-xs uppercase tracking-widest text-mute">Goal</div>
+          <p className="text-center text-sm text-white">{q.objective}</p>
+          {q.type === 'trial' && <p className="mt-1 text-center text-xs text-purple-200">Reward: +{q.xp} EXP and promotion to {q.trialRank}-Rank</p>}
+          <Btn variant={q.type === 'penalty' ? 'danger' : 'rare'} className="mt-4 w-full" onClick={goTraining}>{q.type === 'penalty' ? 'Clear Penalty' : 'Begin Trial'}</Btn>
+        </Panel>
+      ))}
+
+      {/* DAILY QUEST WINDOW */}
+      <Panel title="Daily Quest" open>
+        <p className="text-center text-sm text-glow">[Daily Quest: Training to become strong has arrived.]</p>
+        <div className="mt-3 text-center">
+          <span className="sys-title border-b border-sky-200/60 px-3 pb-0.5 text-sm text-white">Goals</span>
         </div>
+        <ul className="mt-3 grid gap-1">
+          {daily.map((q) => <QuestRow key={q.id} q={q} onProgress={(n) => progress(q.id, n)} goTraining={goTraining} />)}
+        </ul>
+        <p className="mt-4 text-center text-[11px] leading-relaxed text-red-300/90">
+          WARNING: Failure to complete planned training will result in an appropriate penalty.
+        </p>
       </Panel>
+
+      {weekly && (
+        <Panel title="Weekly Quest">
+          <QuestRow q={weekly} onProgress={() => {}} goTraining={goTraining} />
+        </Panel>
+      )}
 
       {promo && (
         <Panel title={`Path to ${promo.next}-Rank`} tone={promo.trialUnlocked ? 'rare' : undefined}>
+          <div className="mb-3 flex items-center justify-center gap-4">
+            <RankEmblem rank={s.rank} size={48} glow={false} />
+            <span className="sys-title text-glow">→</span>
+            <RankEmblem rank={promo.next} size={48} />
+          </div>
           <div className="grid gap-3 text-sm">
             <Req label="Experience" have={promo.xp.have} need={promo.xp.need} />
             <Req label="Active weeks at rank" have={promo.weeks.have} need={promo.weeks.need} />
             <Req label="Personal records" have={promo.prs.have} need={promo.prs.need} />
             <div className="flex items-center justify-between">
-              <span>Rank Trial</span>
-              {promo.trialUnlocked ? <Tag color="#a855f7">Unlocked</Tag> : <Tag color="#8a9bb4">Locked</Tag>}
+              <span className="sys-title text-xs text-glow">Rank Trial</span>
+              {promo.trialUnlocked ? <Tag color="#c084fc">Unlocked</Tag> : <Tag color="#93a8c9">Locked</Tag>}
             </div>
           </div>
+          <p className="mt-3 text-center text-xs text-mute">{RANK_NAME[promo.next]}</p>
         </Panel>
       )}
 
-      <Panel title="Status">
+      <Panel title="Stat Detail">
         <div className="grid gap-3">
           {STAT_IDS.map((id) => {
             const xp = s.stats[id]
@@ -91,9 +141,9 @@ export function SystemTab({ s, update, goTraining }: { s: GameState; update: (fn
               <div key={id}>
                 <div className="mb-1 flex items-baseline justify-between text-sm">
                   <span><span className="sys-title mr-2 text-xs" style={{ color: STAT_COLOR[id] }}>{STAT_ABBR[id]}</span>{STAT_LABEL[id]}</span>
-                  <span className="flex items-center gap-2"><span className="sys-title text-ink">Lv {l}</span><Tag color={RANK_COLOR[statRank(l)]}>{statRank(l)}</Tag></span>
+                  <span className="text-xs text-mute">{xp - lo} / {hi - lo}</span>
                 </div>
-                <Bar value={xp - lo} max={hi - lo} height={5} color={STAT_COLOR[id]} label={`${STAT_LABEL[id]} progress`} />
+                <Bar value={xp - lo} max={hi - lo} height={4} color={STAT_COLOR[id]} label={`${STAT_LABEL[id]} progress`} />
               </div>
             )
           })}
@@ -103,14 +153,29 @@ export function SystemTab({ s, update, goTraining }: { s: GameState; update: (fn
   )
 }
 
-function promoNeed(s: GameState) {
-  return Math.max(0, RANK_XP[s.rank] - s.xp)
+function Row({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="sys-title w-14 shrink-0 text-[12px] text-glow">{k}:</dt>
+      <dd className="truncate font-medium text-white">{v}</dd>
+    </div>
+  )
+}
+
+function Gauge({ label, value, max, text, color }: { label: string; value: number; max: number; text: string; color?: string }) {
+  return (
+    <div className="grid grid-cols-[3.5rem_1fr_auto] items-center gap-2">
+      <span className="sys-title text-xs text-glow">{label}</span>
+      <Bar value={value} max={max} height={9} color={color} label={label} />
+      <span className="w-20 text-right text-[11px] tabular-nums text-mute">{text}</span>
+    </div>
+  )
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-edge/70 bg-panel-2/50 py-2">
-      <div className="sys-title text-lg leading-none text-ink">{value}</div>
+    <div>
+      <div className="sys-title glow-text text-xl leading-none text-white">{value}</div>
       <div className="sys-title mt-1 text-[10px] text-mute">{label}</div>
     </div>
   )
@@ -120,61 +185,49 @@ function Req({ label, have, need }: { label: string; have: number; need: number 
   const ok = have >= need
   return (
     <div>
-      <div className="mb-1 flex justify-between"><span>{label}</span><span className={ok ? 'text-ok' : 'text-mute'}>{Math.min(have, need).toLocaleString()} / {need.toLocaleString()}{ok ? ' ✓' : ''}</span></div>
-      <Bar value={have} max={need} height={4} color={ok ? '#34d399' : undefined} label={label} />
+      <div className="mb-1 flex justify-between"><span className="sys-title text-xs text-glow">{label}</span><span className={`text-xs tabular-nums ${ok ? 'text-ok' : 'text-mute'}`}>{Math.min(have, need).toLocaleString()} / {need.toLocaleString()}{ok ? ' ✓' : ''}</span></div>
+      <Bar value={have} max={need} height={4} color={ok ? '#6ee7b7' : undefined} label={label} />
     </div>
   )
 }
 
-const TYPE_LABEL: Record<Quest['type'], string> = {
-  main: 'Daily · Main', side: 'Daily', habit: 'Daily · Habit', recovery: 'Recovery', sleep: 'Daily · Sleep',
-  weekly: 'Weekly', penalty: 'Penalty', trial: 'Rank Trial',
-}
-
-export function QuestCard({ q, onProgress, goTraining }: { q: Quest; onProgress: (n: number) => void; goTraining: () => void }) {
+/** One goal line: "Push-ups [12/45] ☐", expands to show details and controls. */
+function QuestRow({ q, onProgress, goTraining }: { q: Quest; onProgress: (n: number) => void; goTraining: () => void }) {
+  const [open, setOpen] = useState(false)
   const done = q.status === 'done'
-  const tone = q.type === 'penalty' ? 'danger' : q.type === 'trial' ? 'rare' : undefined
-  const accent = tone === 'danger' ? '#ef4444' : tone === 'rare' ? '#a855f7' : '#38bdf8'
-  const bonusOpen = done && q.bonus && !q.bonus.done && q.measure !== 'workout'
+  const bonusOpen = done && q.bonus && !q.bonus.done && (q.measure === 'count' || q.measure === 'minutes')
   const steps = q.measure === 'minutes' ? [5, 10] : q.unit === 'glasses' ? [1] : q.unit === 'sec' ? [15, 30] : [1, 5, 10]
+  const shown = q.measure === 'check' ? (done ? 1 : 0) : Math.min(q.progress, done && q.bonus ? q.bonus.target : q.target)
   return (
-    <article className={`rounded border p-3 transition ${done ? 'border-ok/40 bg-ok/5' : tone === 'danger' ? 'border-danger/50 bg-danger/5' : tone === 'rare' ? 'border-rare/50 bg-rare/5' : 'border-edge bg-panel-2/40'}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="sys-title text-[10px]" style={{ color: accent }}>{TYPE_LABEL[q.type]}</div>
-          <h3 className={`font-semibold ${done ? 'text-ok' : 'text-ink'}`}>{done ? '✓ ' : ''}{q.title}</h3>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <Tag color={RANK_COLOR[q.difficulty]}>Rank {q.difficulty}</Tag>
-          {q.xp > 0 && <span className="sys-title text-xs text-glow">+{q.xp} XP</span>}
-        </div>
-      </div>
-      <p className="mt-1 text-sm text-mute">{q.description}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-mute">
-        <span className="text-ink">◆ {q.objective}</span>
-        {q.minutes > 0 && <span>~{q.minutes} min</span>}
-        <span>{STAT_LABEL[q.stat]}</span>
-        {q.verification && <Tag color={q.verification === 'Logged' ? '#34d399' : '#8a9bb4'}>{q.verification}</Tag>}
-      </div>
-      {q.measure !== 'check' && q.target > 1 && (
-        <div className="mt-2">
-          <div className="mb-1 flex justify-between text-xs text-mute"><span>Progress</span><span>{Math.min(q.progress, q.bonus && done ? q.bonus.target : q.target)} / {q.target} {q.unit}</span></div>
-          <Bar value={q.progress} max={q.target} height={6} color={done ? '#34d399' : accent} label={`${q.title} progress`} />
-        </div>
-      )}
-      {q.bonus && (
-        <div className={`mt-2 text-xs ${q.bonus.done ? 'text-rare' : 'text-mute'}`}>★ Bonus: {q.bonus.text} {q.bonus.done ? '(cleared)' : `(+${Math.round(q.xp / 2)} XP)`}</div>
-      )}
-      {(!done || bonusOpen) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {q.measure === 'workout' && <Btn variant={tone ?? 'primary'} onClick={goTraining}>{q.type === 'trial' ? 'Begin Trial' : 'Start Workout'}</Btn>}
-          {q.measure === 'check' && <Btn onClick={() => onProgress(1)}>Complete</Btn>}
-          {(q.measure === 'count' || q.measure === 'minutes') && steps.map((n) => (
-            <Btn key={n} variant="ghost" onClick={() => onProgress(n)}>+{n} {q.measure === 'minutes' ? 'min' : q.unit === 'glasses' ? 'glass' : q.unit}</Btn>
-          ))}
-          {q.measure === 'weeklyWorkouts' && <span className="text-xs text-mute">Advances automatically as you log planned workouts.</span>}
+    <li className={`rounded-sm border transition ${open ? 'border-sky-200/40 bg-blue-950/40' : 'border-transparent'}`}>
+      <button className="flex w-full items-center gap-3 px-2 py-2.5 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className={`flex-1 font-medium ${done ? 'text-ok' : 'text-white'}`}>{q.title}</span>
+        <span className="sys-title text-sm tabular-nums text-glow">[{shown}/{q.measure === 'check' ? 1 : q.target}{q.unit && q.measure !== 'workout' && q.measure !== 'check' ? ` ${q.unit}` : ''}]</span>
+        <span aria-hidden className={`flex h-5 w-5 items-center justify-center border text-xs ${done ? 'border-ok bg-ok/20 text-ok' : 'border-sky-200/70'}`}>{done ? '✓' : ''}</span>
+      </button>
+      {open && (
+        <div className="grid gap-2 px-2 pb-3 text-sm">
+          <p className="text-mute">{q.description}</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-mute">
+            <span>◆ {q.objective}</span>
+            <span>Rank {q.difficulty}</span>
+            <span className="text-glow">+{q.xp} EXP</span>
+            <span>{STAT_LABEL[q.stat]}</span>
+            {q.verification && <Tag color={q.verification === 'Logged' ? '#6ee7b7' : '#93a8c9'}>{q.verification}</Tag>}
+          </div>
+          {q.bonus && <div className={`text-xs ${q.bonus.done ? 'text-rare' : 'text-mute'}`}>★ Bonus: {q.bonus.text} {q.bonus.done ? '(cleared)' : `(+${Math.round(q.xp / 2)} EXP)`}</div>}
+          {(!done || bonusOpen) && (
+            <div className="mt-1 flex flex-wrap gap-2">
+              {q.measure === 'workout' && <Btn onClick={goTraining}>Start Workout</Btn>}
+              {q.measure === 'check' && <Btn onClick={() => onProgress(1)}>Complete</Btn>}
+              {(q.measure === 'count' || q.measure === 'minutes') && steps.map((n) => (
+                <Btn key={n} variant="ghost" onClick={() => onProgress(n)}>+{n} {q.measure === 'minutes' ? 'min' : q.unit === 'glasses' ? 'glass' : q.unit}</Btn>
+              ))}
+              {q.measure === 'weeklyWorkouts' && <span className="text-xs text-mute">Advances as you log planned workouts.</span>}
+            </div>
+          )}
         </div>
       )}
-    </article>
+    </li>
   )
 }
