@@ -33,4 +33,25 @@ describe('plan generator', () => {
     const plan = generatePlan(p, { pushups: 20, plankSeconds: 60, cardioLevel: 4, mobilityLevel: 3 })
     for (const d of Object.values(plan)) for (const e of d.exercises) expect(EXERCISE_BY_ID[e.exerciseId].level).toBe(1)
   })
+  it('follows a custom routine: separate push and pull, cardio day, lower body on Sunday', () => {
+    const p: Profile = {
+      name: 'x', ageRange: '18-29', units: 'metric', experience: 'intermediate', goals: ['strength'], equipment: ['dumbbells', 'pullupBar'],
+      trainingDays: [1, 3, 5, 0], sessionMinutes: 45, diet: { preferences: '', allergies: '' },
+      routine: { 1: 'push', 3: 'pull', 5: 'cardio', 0: 'lower' },
+    }
+    const plan = generatePlan(p, { pushups: 15, plankSeconds: 45, cardioLevel: 3, mobilityLevel: 3 })
+    expect([plan[1].title, plan[3].title, plan[5].title, plan[0].title]).toEqual(['Push', 'Pull', 'Cardio', 'Lower Body'])
+    const patterns = (wd: number) => plan[wd].exercises.map((e) => EXERCISE_BY_ID[e.exerciseId].pattern)
+    for (const legs of ['squat', 'lunge', 'hinge']) {
+      expect(patterns(1)).not.toContain(legs)
+      expect(patterns(3)).not.toContain(legs)
+      expect(patterns(5)).not.toContain(legs)
+    }
+    expect(patterns(1).filter((x) => x === 'pull' || x === 'vpull')).toHaveLength(0)
+    expect(patterns(3).filter((x) => x === 'push' || x === 'vpush')).toHaveLength(0)
+    expect(patterns(5)[0]).toBe('cardio')
+    expect(plan[5].exercises[0].seconds).toBeGreaterThanOrEqual(20 * 60)
+    const ids = plan[1].exercises.map((e) => e.exerciseId)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
 })

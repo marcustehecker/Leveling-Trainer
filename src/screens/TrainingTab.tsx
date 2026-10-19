@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { logWorkout, questsFor } from '../core/engine'
+import { logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
-import { describeTarget, generatePlan, planDayFor, type PlanDay } from '../core/plan'
+import { describeTarget, generatePlan, planDayFor, WORKOUT_TYPES, type PlanDay } from '../core/plan'
 import { WEEKDAY_SHORT, weekday } from '../core/dates'
-import type { GameState, LoggedExercise, WorkoutInput } from '../core/types'
+import type { GameState, LoggedExercise, WorkoutInput, WorkoutType } from '../core/types'
 import { Btn, Panel, Tag } from '../ui/components'
 import { fromDisplayWeight, nowIso, todayKey, toDisplayWeight, weightUnit } from '../store'
 import { STAT_COLOR, STAT_LABEL } from './labels'
@@ -49,6 +49,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   const today = todayKey()
   const [draft, setDraft] = useState<Draft | null>(loadDraft)
   const [view, setView] = useState<'plan' | 'library' | 'history'>('plan')
+  const [editing, setEditing] = useState(false)
   const plan = useMemo(() => generatePlan(s.profile, s.assessment), [s.profile, s.assessment])
   const todayPlan = planDayFor(s.profile, s.assessment, today)
   const trial = questsFor(s, today).find((q) => q.type === 'trial' && q.status === 'active')
@@ -72,7 +73,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
     <div className="grid gap-7 pt-3">
       <div className="grid grid-cols-3 gap-2">
         {(['plan', 'library', 'history'] as const).map((v) => (
-          <button key={v} onClick={() => setView(v)} className={`sys-title h-10 rounded border text-xs ${view === v ? 'border-sys bg-sys/15 text-glow' : 'border-edge text-mute'}`}>
+          <button key={v} data-sfx="tab" onClick={() => setView(v)} className={`sys-title h-10 rounded border text-xs ${view === v ? 'border-sys bg-sys/15 text-glow' : 'border-edge text-mute'}`}>
             {v === 'plan' ? 'Plan' : v === 'library' ? 'Exercises' : 'History'}
           </button>
         ))}
@@ -96,7 +97,12 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
             </Panel>
           )}
           <Btn variant="ghost" onClick={() => setDraft({ title: 'Custom Session', startedAt: Date.now(), exercises: [] })}>Log a Custom Session</Btn>
+          {editing ? <RoutineEditor s={s} onClose={() => setEditing(false)} onSave={(trainingDays, routine) => {
+            update((x) => updateProfile(x, { trainingDays, routine }, undefined, today, nowIso()))
+            setEditing(false)
+          }} /> : (
           <Panel title="This Week's Plan">
+            <Btn variant="ghost" className="mb-3 w-full" onClick={() => setEditing(true)}>Edit Routine</Btn>
             <div className="grid gap-2">
               {[1, 2, 3, 4, 5, 6, 0].map((wd) => {
                 const d = plan[wd]
@@ -114,12 +120,45 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
               })}
             </div>
           </Panel>
+          )}
         </>
       )}
 
       {view === 'library' && <Library s={s} />}
       {view === 'history' && <History s={s} />}
     </div>
+  )
+}
+
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+/** Choose the workout for each weekday, or Rest. */
+function RoutineEditor({ s, onSave, onClose }: { s: GameState; onSave: (days: number[], routine: Partial<Record<number, WorkoutType>>) => void; onClose: () => void }) {
+  const [pick, setPick] = useState<Record<number, WorkoutType | 'rest'>>(() =>
+    Object.fromEntries(DAY_ORDER.map((wd) => [wd, s.profile.trainingDays.includes(wd) ? s.profile.routine?.[wd] ?? 'auto' : 'rest'])))
+  const days = DAY_ORDER.filter((wd) => pick[wd] !== 'rest')
+  const ok = days.length >= 2 && days.length <= 6
+  return (
+    <Panel title="Edit Routine" open>
+      <p className="mb-3 text-sm text-mute">Pick a workout for each day. Auto lets the System choose. Changes start today; missing a training day still costs XP.</p>
+      <div className="grid gap-2">
+        {DAY_ORDER.map((wd) => (
+          <label key={wd} className="flex items-center gap-3">
+            <span className="sys-title w-10 text-xs text-mute">{WEEKDAY_SHORT[wd]}</span>
+            <select value={pick[wd]} onChange={(e) => setPick({ ...pick, [wd]: e.target.value as WorkoutType | 'rest' })}
+              className={`h-11 flex-1 rounded border bg-panel-2 px-3 outline-none focus:border-sys ${pick[wd] === 'rest' ? 'border-edge text-mute' : 'border-sys/70 text-ink'}`}>
+              <option value="rest">Rest</option>
+              {WORKOUT_TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+      {!ok && <p className="mt-2 text-sm text-danger">Choose between 2 and 6 training days.</p>}
+      <div className="mt-4 flex gap-3">
+        <Btn variant="ghost" sfx="back" onClick={onClose}>Cancel</Btn>
+        <Btn className="flex-1" sfx="next" disabled={!ok} onClick={() => onSave([...days].sort(), Object.fromEntries(days.map((wd) => [wd, pick[wd] as WorkoutType])))}>Save Routine</Btn>
+      </div>
+    </Panel>
   )
 }
 

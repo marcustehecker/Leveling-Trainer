@@ -5,6 +5,8 @@ export type DateKey = string // YYYY-MM-DD, local time
 export type AgeRange = '13-15' | '16-17' | '18-29' | '30-44' | '45-59' | '60+'
 export type Experience = 'none' | 'novice' | 'intermediate' | 'advanced'
 export type Goal = 'strength' | 'muscle' | 'endurance' | 'fatloss' | 'mobility' | 'technique' | 'consistency' | 'general'
+/** A day's workout in a custom routine. 'auto' lets the System pick from the split. */
+export type WorkoutType = 'auto' | 'push' | 'pull' | 'lower' | 'upper' | 'full' | 'cardio'
 export type Equipment = 'none' | 'dumbbells' | 'bands' | 'pullupBar' | 'gym'
 
 export interface Profile {
@@ -20,6 +22,8 @@ export interface Profile {
   equipment: Equipment[]
   /** Weekdays, 0 = Sunday … 6 = Saturday. */
   trainingDays: number[]
+  /** Player-chosen workout per weekday; days left out use the automatic split. */
+  routine?: Partial<Record<number, WorkoutType>>
   sessionMinutes: number
   diet: { preferences: string; allergies: string }
   bedtime?: string

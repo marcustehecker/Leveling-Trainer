@@ -104,7 +104,7 @@ function Game({ account }: { account: Account | null }) {
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-sky-200/30 bg-[#020617]/90 shadow-[0_-8px_24px_rgba(37,99,235,.18)] backdrop-blur" aria-label="Main">
         <div className="mx-auto grid max-w-md grid-cols-5">
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}
+            <button key={t.id} data-sfx="tab" onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}
               className={`relative flex h-14 flex-col items-center justify-center gap-1 ${tab === t.id ? 'text-white' : 'text-mute'}`}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden
                 style={tab === t.id ? { filter: 'drop-shadow(0 0 6px rgba(96,165,250,1))' } : undefined}><path d={t.icon} /></svg>

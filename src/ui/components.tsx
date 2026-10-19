@@ -96,8 +96,8 @@ export function SystemText({ text, className = '', speed = 22, onDone, sound }: 
   )
 }
 
-export function Btn({ children, onClick, variant = 'primary', className = '', disabled, type = 'button', sfx }: {
-  children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger' | 'rare'; className?: string; disabled?: boolean; type?: 'button' | 'submit'; sfx?: Sfx | 'none'
+export function Btn({ children, onClick, variant = 'primary', className = '', disabled, type = 'button', sfx, sfxLevel }: {
+  children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger' | 'rare'; className?: string; disabled?: boolean; type?: 'button' | 'submit'; sfx?: Sfx | 'none'; sfxLevel?: number
 }) {
   const styles = {
     primary: 'bg-blue-600/25 text-white border-sky-200/80 shadow-[0_0_12px_rgba(59,130,246,.55),inset_0_0_10px_rgba(147,197,253,.25)] glow-soft hover:bg-blue-500/35',
@@ -106,7 +106,7 @@ export function Btn({ children, onClick, variant = 'primary', className = '', di
     rare: 'bg-purple-600/25 text-purple-100 border-purple-200/80 shadow-[0_0_12px_rgba(168,85,247,.5)] hover:bg-purple-500/35',
   }[variant]
   return (
-    <button type={type} disabled={disabled} onClick={onClick} data-sfx={sfx}
+    <button type={type} disabled={disabled} onClick={onClick} data-sfx={sfx} data-sfx-level={sfxLevel}
       className={`sys-title min-h-11 rounded-sm border px-4 py-2 text-sm transition active:scale-[.98] disabled:opacity-40 ${styles} ${className}`}>
       {children}
     </button>

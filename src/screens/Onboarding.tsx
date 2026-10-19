@@ -82,7 +82,7 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
     apply()
     window.clearTimeout(advanceTimer.current)
     const from = step
-    advanceTimer.current = window.setTimeout(() => { play('next'); setDir('r'); setStep((cur) => (cur === from ? from + 1 : cur)) }, 380)
+    advanceTimer.current = window.setTimeout(() => { play('next', from); setDir('r'); setStep((cur) => (cur === from ? from + 1 : cur)) }, 380)
   }
 
   const GOALS: { v: Goal; label: string; sub: string; icon: string }[] = [
@@ -106,7 +106,7 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
           <SystemText sound className="text-lg leading-relaxed text-ink" text="[You have met the conditions to become a Player. Will you accept?] Enter your Hunter name to register." />
           <Field label="Hunter name">
             <input className={input} value={d.name} maxLength={24} placeholder="Enter your name" onChange={(e) => set({ name: e.target.value })} autoFocus
-              enterKeyHint="next" onKeyDown={(e) => { if (e.key === 'Enter' && d.name.trim().length >= 2) { play('next'); go(1) } }} />
+              enterKeyHint="next" onKeyDown={(e) => { if (e.key === 'Enter' && d.name.trim().length >= 2) { play('next', 0); go(1) } }} />
           </Field>
         </div>
       ),
@@ -306,7 +306,7 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
         {step > 0 && <Btn variant="ghost" sfx="back" onClick={() => go(step - 1)}>Back</Btn>}
         {cur.skippable && <Btn variant="ghost" sfx="next" onClick={() => go(step + 1)}>Skip</Btn>}
         {!cur.custom && (
-          <Btn className="flex-1" sfx={last ? 'none' : 'next'} disabled={cur.valid === false} onClick={() => (last ? finish() : go(step + 1))}>
+          <Btn className="flex-1" sfx={last ? 'none' : 'next'} sfxLevel={step} disabled={cur.valid === false} onClick={() => (last ? finish() : go(step + 1))}>
             {last ? 'Complete Registration' : 'Continue'}
           </Btn>
         )}
@@ -325,7 +325,7 @@ function AssessmentReveal({ s, onEnter }: { s: GameState; onEnter: () => void })
   useEffect(() => {
     if (!shown) return
     play('reveal')
-    const timers = STAT_IDS.map((_, i) => window.setTimeout(() => { setStats(i + 1); play('stat') }, 650 + i * 160))
+    const timers = STAT_IDS.map((_, i) => window.setTimeout(() => { setStats(i + 1); play('stat', i) }, 650 + i * 160))
     return () => timers.forEach((t) => window.clearTimeout(t))
   }, [shown])
   return (
