@@ -24,6 +24,8 @@ export interface Profile {
   trainingDays: number[]
   /** Player-chosen workout per weekday; days left out use the automatic split. */
   routine?: Partial<Record<number, WorkoutType>>
+  /** Exercise the player swapped into a plan slot, keyed by PlannedExercise.slot. */
+  swaps?: Record<string, string>
   sessionMinutes: number
   diet: { preferences: string; allergies: string }
   bedtime?: string

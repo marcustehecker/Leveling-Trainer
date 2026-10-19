@@ -50,6 +50,11 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   const [draft, setDraft] = useState<Draft | null>(loadDraft)
   const [view, setView] = useState<'plan' | 'library' | 'history'>('plan')
   const [editing, setEditing] = useState(false)
+  const swap = (slot: string, exerciseId: string | null) => update((x) => {
+    const swaps = { ...x.profile.swaps }
+    if (exerciseId) swaps[slot] = exerciseId; else delete swaps[slot]
+    return { ...x, profile: { ...x.profile, swaps } }
+  })
   const plan = useMemo(() => generatePlan(s.profile, s.assessment), [s.profile, s.assessment])
   const todayPlan = planDayFor(s.profile, s.assessment, today)
   const trial = questsFor(s, today).find((q) => q.type === 'trial' && q.status === 'active')
@@ -88,7 +93,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
           )}
           {todayPlan ? (
             <Panel title="Today's Training" right={loggedToday > 0 ? <Tag color="#34d399">Logged</Tag> : <Tag>~{todayPlan.estMinutes} min</Tag>}>
-              <PlanDayView day={todayPlan} s={s} />
+              <PlanDayView day={todayPlan} s={s} onSwap={swap} />
               <Btn className="mt-4 w-full" onClick={() => setDraft(draftFromPlan(todayPlan, s))}>{loggedToday > 0 ? 'Train Again (reduced XP)' : 'Start Workout'}</Btn>
             </Panel>
           ) : (
@@ -114,7 +119,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
                       <span className="flex-1">{d ? d.title : <span className="text-mute">Rest · Recovery</span>}</span>
                       {d && <span className="text-xs text-mute">{d.focus}</span>}
                     </summary>
-                    {d && <div className="mt-2"><PlanDayView day={d} s={s} /></div>}
+                    {d && <div className="mt-2"><PlanDayView day={d} s={s} onSwap={swap} /></div>}
                   </details>
                 )
               })}
@@ -162,7 +167,9 @@ function RoutineEditor({ s, onSave, onClose }: { s: GameState; onSave: (days: nu
   )
 }
 
-function PlanDayView({ day, s }: { day: PlanDay; s: GameState }) {
+function PlanDayView({ day, s, onSwap }: { day: PlanDay; s: GameState; onSwap?: (slot: string, exerciseId: string | null) => void }) {
+  const [swapping, setSwapping] = useState<number | null>(null)
+  const cur = swapping === null ? null : day.exercises[swapping]
   return (
     <div className="grid gap-3 text-sm">
       <div className="text-xs text-mute"><span className="sys-title text-sys">Warm-up</span> · {day.warmup.join(' · ')}</div>
@@ -172,7 +179,15 @@ function PlanDayView({ day, s }: { day: PlanDay; s: GameState }) {
           const rec = s.records[pe.exerciseId]
           return (
             <li key={i} className="flex items-baseline justify-between gap-3 border-b border-edge/40 pb-2 last:border-0">
-              <span><span className="mr-2 text-mute">{i + 1}.</span>{ex.name}</span>
+              <span className="min-w-0">
+                <span className="mr-2 text-mute">{i + 1}.</span>{ex.name}
+                {onSwap && pe.slot && (
+                  <span className="mt-1 flex gap-3 text-xs">
+                    <button className="text-sys underline-offset-2 hover:underline" onClick={() => setSwapping(i)}>Swap</button>
+                    {s.profile.swaps?.[pe.slot] && <button className="text-mute underline-offset-2 hover:underline" data-sfx="back" onClick={() => onSwap(pe.slot!, null)}>Reset</button>}
+                  </span>
+                )}
+              </span>
               <span className="shrink-0 text-right text-xs text-mute">
                 {describeTarget(pe)}{pe.restSec ? ` · rest ${pe.restSec}s` : ''}
                 {rec && rec.weightKg > 0 && <span className="block text-sys">best {toDisplayWeight(rec.weightKg, s.profile.units)}{weightUnit(s.profile.units)} × {rec.reps}</span>}
@@ -182,6 +197,10 @@ function PlanDayView({ day, s }: { day: PlanDay; s: GameState }) {
         })}
       </ol>
       <div className="text-xs text-mute"><span className="sys-title text-sys">Cooldown</span> · {day.cooldown.join(' · ')}</div>
+      {cur && onSwap && (
+        <ExercisePicker s={s} title={`Swap ${EXERCISE_BY_ID[cur.exerciseId].name}`} pattern={EXERCISE_BY_ID[cur.exerciseId].pattern}
+          onClose={() => setSwapping(null)} onPick={(e) => { onSwap(cur.slot!, e.id); setSwapping(null) }} />
+      )}
     </div>
   )
 }
@@ -305,17 +324,39 @@ function NumIn({ value, onChange, label }: { value: number; onChange: (v: number
   )
 }
 
-function ExercisePicker({ s, pattern, onPick, onClose }: { s: GameState; pattern?: string; onPick: (e: Exercise) => void; onClose: () => void }) {
-  const list = EXERCISES.filter((e) => hasEquipment(e, s.profile.equipment) && (!pattern || e.pattern === pattern))
+const GROUPS: Record<string, string> = {
+  push: 'Chest', vpush: 'Shoulder Press', delts: 'Shoulders & Traps', triceps: 'Triceps', pull: 'Rows & Back', vpull: 'Pull-ups & Pulldowns',
+  biceps: 'Biceps', squat: 'Squats & Quads', hinge: 'Glutes & Hamstrings', lunge: 'Single Leg', calves: 'Calves', core: 'Core', cardio: 'Cardio', mobility: 'Mobility & Balance',
+}
+
+function ExercisePicker({ s, pattern, onPick, onClose, title }: { s: GameState; pattern?: string; onPick: (e: Exercise) => void; onClose: () => void; title?: string }) {
+  const [all, setAll] = useState(!pattern)
+  const [q, setQ] = useState('')
+  const term = q.trim().toLowerCase()
+  const list = EXERCISES.filter((e) => hasEquipment(e, s.profile.equipment) && (all || term || e.pattern === pattern) && (!term || e.name.toLowerCase().includes(term)))
+  const groups = Object.keys(GROUPS).map((g) => [g, list.filter((e) => e.pattern === g)] as const).filter(([, xs]) => xs.length)
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end bg-black/70" onClick={onClose}>
-      <div className="safe-bottom mx-auto max-h-[75vh] w-full max-w-md overflow-y-auto rounded-t-lg border border-edge bg-panel p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between"><h2 className="sys-title text-sm text-sys">{pattern ? 'Swap Exercise' : 'Add Exercise'}</h2><button className="text-mute" onClick={onClose}>Close</button></div>
-        <div className="grid gap-2">
-          {list.map((e) => (
-            <button key={e.id} onClick={() => onPick(e)} className="flex items-center justify-between rounded border border-edge px-3 py-3 text-left text-sm hover:border-sys">
-              <span>{e.name}</span><span className="text-xs text-mute">{e.level === 1 ? 'Beginner' : e.level === 2 ? 'Intermediate' : 'Advanced'}</span>
-            </button>
+      <div className="safe-bottom mx-auto flex max-h-[80vh] w-full max-w-md flex-col rounded-t-lg border border-edge bg-panel p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between"><h2 className="sys-title text-sm text-sys">{title ?? (pattern ? 'Swap Exercise' : 'Add Exercise')}</h2><button className="text-mute" onClick={onClose}>Close</button></div>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search exercises" className="mb-2 h-11 rounded border border-edge bg-panel-2 px-3 outline-none focus:border-sys" />
+        {pattern && !term && (
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <button data-sfx="tab" onClick={() => setAll(false)} className={`sys-title h-9 rounded border text-xs ${!all ? 'border-sys bg-sys/15 text-glow' : 'border-edge text-mute'}`}>Similar</button>
+            <button data-sfx="tab" onClick={() => setAll(true)} className={`sys-title h-9 rounded border text-xs ${all ? 'border-sys bg-sys/15 text-glow' : 'border-edge text-mute'}`}>All exercises</button>
+          </div>
+        )}
+        <div className="grid gap-4 overflow-y-auto">
+          {groups.length === 0 && <p className="text-sm text-mute">No matches for your equipment.</p>}
+          {groups.map(([g, xs]) => (
+            <div key={g} className="grid gap-2">
+              <div className="sys-title text-xs text-mute">{GROUPS[g]}</div>
+              {xs.map((e) => (
+                <button key={e.id} onClick={() => onPick(e)} className="flex items-center justify-between rounded border border-edge px-3 py-3 text-left text-sm hover:border-sys">
+                  <span>{e.name}</span><span className="text-xs text-mute">{e.level === 1 ? 'Beginner' : e.level === 2 ? 'Intermediate' : 'Advanced'}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       </div>
@@ -325,10 +366,10 @@ function ExercisePicker({ s, pattern, onPick, onClose }: { s: GameState; pattern
 }
 
 function Library({ s }: { s: GameState }) {
-  const groups: Record<string, string> = { squat: 'Squat', hinge: 'Hinge', push: 'Push', vpush: 'Overhead Press', pull: 'Row', vpull: 'Pull-down / Pull-up', lunge: 'Single Leg', core: 'Core', cardio: 'Cardio', mobility: 'Mobility & Balance' }
   return (
     <div className="grid gap-7 pt-3">
-      {Object.entries(groups).map(([p, label]) => (
+      <p className="text-sm text-mute">{EXERCISES.length} exercises. Faded ones need equipment you haven't added in the Hunter tab.</p>
+      {Object.entries(GROUPS).map(([p, label]) => (
         <Panel key={p} title={label}>
           <div className="grid gap-2">
             {EXERCISES.filter((e) => e.pattern === p).map((e) => {

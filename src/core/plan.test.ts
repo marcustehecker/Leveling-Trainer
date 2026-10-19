@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generatePlan } from './plan'
-import { EXERCISE_BY_ID, hasEquipment } from './exercises'
+import { EXERCISES, EXERCISE_BY_ID, hasEquipment } from './exercises'
 import type { Equipment, Experience, Profile } from './types'
 
 const kits: Equipment[][] = [['none'], ['dumbbells'], ['bands'], ['pullupBar'], ['gym'], ['dumbbells', 'pullupBar']]
@@ -53,5 +53,20 @@ describe('plan generator', () => {
     expect(plan[5].exercises[0].seconds).toBeGreaterThanOrEqual(20 * 60)
     const ids = plan[1].exercises.map((e) => e.exerciseId)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+  it('uses a swapped exercise for its slot and has a no-equipment option for every pattern', () => {
+    const p: Profile = {
+      name: 'x', ageRange: '18-29', units: 'metric', experience: 'intermediate', goals: ['strength'], equipment: ['gym'],
+      trainingDays: [1, 3], sessionMinutes: 60, diet: { preferences: '', allergies: '' }, routine: { 1: 'push', 3: 'pull' },
+    }
+    const a = { pushups: 15, plankSeconds: 45, cardioLevel: 3, mobilityLevel: 3 }
+    const slot = generatePlan(p, a)[1].exercises[0].slot!
+    const swapped = generatePlan({ ...p, swaps: { [slot]: 'dip' } }, a)
+    expect(swapped[1].exercises[0].exerciseId).toBe('dip')
+    const patterns = new Set(EXERCISES.map((e) => e.pattern))
+    for (const pat of patterns) expect(EXERCISES.some((e) => e.pattern === pat && e.equipment.includes('none')), pat).toBe(true)
+    const ids = EXERCISES.map((e) => e.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const e of EXERCISES) if (e.easier) expect(EXERCISE_BY_ID[e.easier], `${e.id} easier`).toBeTruthy()
   })
 })

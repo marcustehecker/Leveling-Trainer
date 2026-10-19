@@ -4,6 +4,8 @@ import { weekday } from './dates'
 
 export interface PlannedExercise {
   exerciseId: string
+  /** Stable id for this slot, used to remember the player's swap. */
+  slot?: string
   sets: number
   /** Rep range for reps-based exercises. */
   reps?: [number, number]
@@ -32,11 +34,11 @@ interface Template {
 const T: Record<string, Template> = {
   fullA: { id: 'fullA', title: 'Full Body A', focus: 'Squat, push, pull', patterns: ['squat', 'push', 'pull', 'hinge', 'core', 'cardio'] },
   fullB: { id: 'fullB', title: 'Full Body B', focus: 'Lunge, press, pull-down', patterns: ['lunge', 'vpush', 'vpull', 'hinge', 'core', 'mobility'] },
-  upper: { id: 'upper', title: 'Upper Body', focus: 'Push and pull', patterns: ['push', 'pull', 'vpush', 'vpull', 'core', 'cardio'] },
-  lower: { id: 'lower', title: 'Lower Body', focus: 'Legs and hips', patterns: ['squat', 'hinge', 'lunge', 'core', 'cardio', 'mobility'] },
-  push: { id: 'push', title: 'Push', focus: 'Chest, shoulders, triceps', patterns: ['push', 'vpush', 'push', 'core', 'cardio', 'mobility'] },
-  pull: { id: 'pull', title: 'Pull', focus: 'Back and biceps', patterns: ['pull', 'vpull', 'pull', 'core', 'cardio', 'mobility'] },
-  legs: { id: 'legs', title: 'Legs', focus: 'Quads, hamstrings, glutes', patterns: ['squat', 'lunge', 'hinge', 'core', 'cardio', 'mobility'] },
+  upper: { id: 'upper', title: 'Upper Body', focus: 'Push and pull', patterns: ['push', 'pull', 'vpush', 'vpull', 'biceps', 'triceps'] },
+  lower: { id: 'lower', title: 'Lower Body', focus: 'Legs and hips', patterns: ['squat', 'hinge', 'lunge', 'calves', 'core', 'mobility'] },
+  push: { id: 'push', title: 'Push', focus: 'Chest, shoulders, triceps', patterns: ['push', 'vpush', 'triceps', 'push', 'delts', 'triceps'] },
+  pull: { id: 'pull', title: 'Pull', focus: 'Back and biceps', patterns: ['vpull', 'pull', 'biceps', 'pull', 'biceps', 'core'] },
+  legs: { id: 'legs', title: 'Legs', focus: 'Quads, hamstrings, glutes', patterns: ['squat', 'lunge', 'hinge', 'calves', 'core', 'mobility'] },
   cardio: { id: 'cardio', title: 'Cardio', focus: 'Conditioning and core', patterns: ['cardio', 'core', 'cardio', 'mobility', 'core', 'cardio'] },
 }
 
@@ -96,7 +98,8 @@ export function prescription(ex: Exercise, p: Profile, a: Assessment, mainCardio
     return { sets, seconds: Math.min(60, Math.max(15, Math.round(base * 0.7))), restSec: 60 }
   }
   const compound = ['squat', 'hinge', 'push', 'pull', 'vpull'].includes(ex.pattern) && ex.weighted
-  const reps: [number, number] = p.experience === 'advanced' && compound ? [6, 10] : [8, 12]
+  const isolation = ['delts', 'biceps', 'triceps'].includes(ex.pattern)
+  const reps: [number, number] = ex.pattern === 'calves' ? [12, 20] : isolation ? [10, 15] : p.experience === 'advanced' && compound ? [6, 10] : [8, 12]
   return { sets, reps, restSec: compound ? (p.experience === 'advanced' ? 120 : 90) : 60 }
 }
 
@@ -115,9 +118,11 @@ export function generatePlan(p: Profile, a: Assessment): Record<number, PlanDay>
     else if (chosen && chosen !== 'auto') { t = CHOSEN[chosen]; round = 0 }
     const used = new Set<string>()
     const exercises = t.patterns.slice(0, n).map((pattern, j) => {
-      const ex = pickExercise(pattern, p, a, round, used)
+      const slot = `${wd}:${t.id}:${j}`
+      const swapped = p.swaps?.[slot] ? EXERCISE_BY_ID[p.swaps[slot]] : undefined
+      const ex = swapped && hasEquipment(swapped, p.equipment) ? swapped : pickExercise(pattern, p, a, round, used)
       used.add(ex.id)
-      return { exerciseId: ex.id, ...prescription(ex, p, a, t.id === 'cardio' && j === 0) }
+      return { exerciseId: ex.id, slot, ...prescription(ex, p, a, t.id === 'cardio' && j === 0) }
     })
     const work = exercises.reduce((m, e) => m + e.sets * ((e.seconds ?? 40) + e.restSec), 0) / 60
     out[wd] = {
