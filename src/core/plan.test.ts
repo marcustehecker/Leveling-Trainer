@@ -10,7 +10,7 @@ describe('plan generator', () => {
   it('produces a valid plan for every equipment, experience and schedule combination', () => {
     for (const equipment of kits) for (const experience of exps) for (let n = 2; n <= 6; n++) for (const sessionMinutes of [20, 30, 45, 60]) {
       const p: Profile = {
-        name: 'x', ageRange: '18-29', units: 'metric', experience, goal: 'general', equipment,
+        name: 'x', ageRange: '18-29', units: 'metric', experience, goals: ['general'], equipment,
         trainingDays: [1, 2, 3, 4, 5, 6].slice(0, n), sessionMinutes, diet: { preferences: '', allergies: '' },
       }
       const plan = generatePlan(p, { pushups: 3, plankSeconds: 10, cardioLevel: 1, mobilityLevel: 1 })
@@ -27,7 +27,7 @@ describe('plan generator', () => {
   })
   it('keeps 13–15 year olds on beginner-level movements', () => {
     const p: Profile = {
-      name: 'x', ageRange: '13-15', units: 'metric', experience: 'advanced', goal: 'strength', equipment: ['gym'],
+      name: 'x', ageRange: '13-15', units: 'metric', experience: 'advanced', goals: ['strength'], equipment: ['gym'],
       trainingDays: [1, 3, 5], sessionMinutes: 60, diet: { preferences: '', allergies: '' },
     }
     const plan = generatePlan(p, { pushups: 20, plankSeconds: 60, cardioLevel: 4, mobilityLevel: 3 })

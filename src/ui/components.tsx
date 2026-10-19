@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { RankId } from '../core/types'
+import { play, type Sfx } from '../sfx'
 
 export const RANK_COLOR: Record<RankId, string> = {
   E: '#94a3b8', D: '#34d399', C: '#38bdf8', B: '#6366f1', A: '#a855f7', S: '#f59e0b',
@@ -72,7 +73,7 @@ export function RankEmblem({ rank, size = 72, glow = true }: { rank: RankId; siz
 const reduceMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** Typewriter-style System text. */
-export function SystemText({ text, className = '', speed = 22, onDone }: { text: string; className?: string; speed?: number; onDone?: () => void }) {
+export function SystemText({ text, className = '', speed = 22, onDone, sound }: { text: string; className?: string; speed?: number; onDone?: () => void; sound?: boolean }) {
   const [n, setN] = useState(reduceMotion() ? text.length : 0)
   useEffect(() => {
     if (reduceMotion()) { setN(text.length); onDone?.(); return }
@@ -81,6 +82,7 @@ export function SystemText({ text, className = '', speed = 22, onDone }: { text:
     const t = setInterval(() => {
       i += 1
       setN(i)
+      if (sound && i % 2 === 0 && text[i - 1] !== ' ') play('type')
       if (i >= text.length) { clearInterval(t); onDone?.() }
     }, speed)
     return () => clearInterval(t)
@@ -94,8 +96,8 @@ export function SystemText({ text, className = '', speed = 22, onDone }: { text:
   )
 }
 
-export function Btn({ children, onClick, variant = 'primary', className = '', disabled, type = 'button' }: {
-  children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger' | 'rare'; className?: string; disabled?: boolean; type?: 'button' | 'submit'
+export function Btn({ children, onClick, variant = 'primary', className = '', disabled, type = 'button', sfx }: {
+  children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger' | 'rare'; className?: string; disabled?: boolean; type?: 'button' | 'submit'; sfx?: Sfx | 'none'
 }) {
   const styles = {
     primary: 'bg-blue-600/25 text-white border-sky-200/80 shadow-[0_0_12px_rgba(59,130,246,.55),inset_0_0_10px_rgba(147,197,253,.25)] glow-soft hover:bg-blue-500/35',
@@ -104,7 +106,7 @@ export function Btn({ children, onClick, variant = 'primary', className = '', di
     rare: 'bg-purple-600/25 text-purple-100 border-purple-200/80 shadow-[0_0_12px_rgba(168,85,247,.5)] hover:bg-purple-500/35',
   }[variant]
   return (
-    <button type={type} disabled={disabled} onClick={onClick}
+    <button type={type} disabled={disabled} onClick={onClick} data-sfx={sfx}
       className={`sys-title min-h-11 rounded-sm border px-4 py-2 text-sm transition active:scale-[.98] disabled:opacity-40 ${styles} ${className}`}>
       {children}
     </button>

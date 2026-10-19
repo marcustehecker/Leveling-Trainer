@@ -147,6 +147,22 @@ body {
 .anim-glow { animation: pulse-glow 2.4s ease-in-out infinite; }
 .anim-flicker { animation: flicker 1.6s linear infinite; }
 
+/* ---------- Registration ---------- */
+@keyframes slide-in-r { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes slide-in-l { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.035); } 100% { transform: scale(1); } }
+@keyframes check-in { from { transform: scale(0) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes flash { 0% { opacity: .9; } 100% { opacity: 0; } }
+.anim-slide-r { animation: slide-in-r 320ms cubic-bezier(.2, .8, .2, 1) both; }
+.anim-slide-l { animation: slide-in-l 320ms cubic-bezier(.2, .8, .2, 1) both; }
+.choice { transition: border-color 160ms, background-color 160ms, box-shadow 160ms, transform 90ms; }
+.choice:active { transform: scale(.975); }
+.choice[aria-pressed="true"] { animation: pop 260ms ease-out; box-shadow: 0 0 14px rgba(96, 165, 250, .45), inset 0 0 12px rgba(147, 197, 253, .18); }
+.choice-mark { transition: border-color 160ms, background-color 160ms; }
+.choice-mark > span { animation: check-in 220ms cubic-bezier(.2, 1.4, .4, 1) both; }
+.seg { transition: background-color 300ms, box-shadow 300ms; }
+.screen-flash { position: fixed; inset: 0; z-index: 70; pointer-events: none; background: radial-gradient(circle at 50% 40%, rgba(191, 227, 255, .9), rgba(59, 130, 246, .3) 45%, transparent 75%); animation: flash 700ms ease-out both; }
+
 .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 .particles i { position: absolute; bottom: -10px; width: 2px; height: 2px; border-radius: 99px; background: #bfdbfe; box-shadow: 0 0 6px #60a5fa; animation: float-up linear infinite; }
 

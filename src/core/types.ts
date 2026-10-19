@@ -4,7 +4,7 @@ export type DateKey = string // YYYY-MM-DD, local time
 
 export type AgeRange = '13-15' | '16-17' | '18-29' | '30-44' | '45-59' | '60+'
 export type Experience = 'none' | 'novice' | 'intermediate' | 'advanced'
-export type Goal = 'strength' | 'endurance' | 'technique' | 'consistency' | 'general'
+export type Goal = 'strength' | 'muscle' | 'endurance' | 'fatloss' | 'mobility' | 'technique' | 'consistency' | 'general'
 export type Equipment = 'none' | 'dumbbells' | 'bands' | 'pullupBar' | 'gym'
 
 export interface Profile {
@@ -14,7 +14,9 @@ export interface Profile {
   weightKg?: number
   units: 'metric' | 'imperial'
   experience: Experience
-  goal: Goal
+  goals: Goal[]
+  /** Single goal from saves made before goals became multi-select. */
+  goal?: Goal
   equipment: Equipment[]
   /** Weekdays, 0 = Sunday … 6 = Saturday. */
   trainingDays: number[]

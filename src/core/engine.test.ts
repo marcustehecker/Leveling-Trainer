@@ -13,7 +13,7 @@ const WED = addDays(MON, 2)
 const at = (d: string, h = 18) => `${d}T${String(h).padStart(2, '0')}:00:00.000Z`
 
 const profile: Profile = {
-  name: 'Jin', ageRange: '18-29', units: 'metric', experience: 'novice', goal: 'strength',
+  name: 'Jin', ageRange: '18-29', units: 'metric', experience: 'novice', goals: ['strength'],
   equipment: ['dumbbells'], trainingDays: [1, 3, 5], sessionMinutes: 45, diet: { preferences: '', allergies: '' },
 }
 const assessment: Assessment = { pushups: 12, plankSeconds: 40, cardioLevel: 3, mobilityLevel: 2 }

@@ -2,17 +2,23 @@ import { useRef, useState } from 'react'
 import * as B from '../core/balance'
 import { availableTitles, equipTitle, sickDaysUsed, toggleSickDay, updateProfile } from '../core/engine'
 import { WEEKDAY_SHORT } from '../core/dates'
-import type { Equipment, GameState } from '../core/types'
+import type { Equipment, GameState, Goal } from '../core/types'
 import { Btn, Panel } from '../ui/components'
 import { advanceTo } from '../core/engine'
 import { exportBackup, nowIso, readBackup, todayKey } from '../store'
 import { cloudEnabled, deleteAccount, signOutAccount, type Account } from '../cloud'
 import { LegalSheet } from './Legal'
+import { setSoundOn, soundOn } from '../sfx'
 
 const EQUIP: { v: Equipment; label: string }[] = [
   { v: 'none', label: 'Bodyweight' }, { v: 'dumbbells', label: 'Dumbbells' }, { v: 'bands', label: 'Bands' },
   { v: 'pullupBar', label: 'Pull-up bar' }, { v: 'gym', label: 'Full gym' },
 ]
+const GOAL_LABEL: Record<Goal, string> = {
+  strength: 'Strength', muscle: 'Muscle', endurance: 'Endurance', fatloss: 'Fat loss', mobility: 'Mobility',
+  technique: 'Technique', consistency: 'Consistency', general: 'General fitness',
+}
+const profileGoals = (s: GameState): Goal[] => s.profile.goals ?? (s.profile.goal ? [s.profile.goal] : ['general'])
 
 export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; update: (fn: (s: GameState) => GameState) => void; commit: (s: GameState | null) => void; account: Account | null; wipe: () => Promise<void> }) {
   const today = todayKey()
@@ -22,12 +28,14 @@ export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; 
   const [minutes, setMinutes] = useState(s.profile.sessionMinutes)
   const [bedtime, setBedtime] = useState(s.profile.bedtime ?? '')
   const [name, setName] = useState(s.profile.name)
+  const [goals, setGoals] = useState<Goal[]>(profileGoals(s))
+  const [sound, setSound] = useState(soundOn())
   const fileRef = useRef<HTMLInputElement>(null)
   const [legal, setLegal] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const sick = s.sickDays.includes(today)
   const titles = availableTitles(s)
-  const dirty = name !== s.profile.name || minutes !== s.profile.sessionMinutes || bedtime !== (s.profile.bedtime ?? '') ||
+  const dirty = name !== s.profile.name || JSON.stringify([...goals].sort()) !== JSON.stringify([...profileGoals(s)].sort()) || minutes !== s.profile.sessionMinutes || bedtime !== (s.profile.bedtime ?? '') ||
     JSON.stringify([...days].sort()) !== JSON.stringify([...s.profile.trainingDays].sort()) || JSON.stringify(equip) !== JSON.stringify(s.profile.equipment)
 
   const toggleEquip = (v: Equipment) => {
@@ -76,6 +84,14 @@ export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; 
         <div className="grid gap-4">
           <label className="grid gap-1 text-sm"><span className="sys-title text-xs text-mute">Name</span>
             <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} className="h-11 rounded border border-edge bg-panel-2 px-3 outline-none focus:border-sys" /></label>
+          <div className="grid gap-1"><span className="sys-title text-xs text-mute">Goals</span>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(GOAL_LABEL) as Goal[]).filter((g) => g !== 'fatloss' || !['13-15', '16-17'].includes(s.profile.ageRange)).map((g) => (
+                <button key={g} aria-pressed={goals.includes(g)} onClick={() => setGoals(goals.includes(g) ? goals.filter((x) => x !== g) : [...goals, g])}
+                  className={`min-h-10 rounded border px-3 text-sm ${goals.includes(g) ? 'border-sys bg-sys/20' : 'border-edge text-mute'}`}>{GOAL_LABEL[g]}</button>
+              ))}
+            </div>
+          </div>
           <div className="grid gap-1"><span className="sys-title text-xs text-mute">Training days</span>
             <div className="grid grid-cols-7 gap-1">
               {[1, 2, 3, 4, 5, 6, 0].map((wd) => (
@@ -101,11 +117,21 @@ export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; 
           </div>
           <label className="grid gap-1 text-sm"><span className="sys-title text-xs text-mute">Bedtime (blank turns off the sleep quest)</span>
             <input type="time" value={bedtime} onChange={(e) => setBedtime(e.target.value)} className="h-11 rounded border border-edge bg-panel-2 px-3 outline-none focus:border-sys" /></label>
-          <Btn disabled={!dirty || days.length < 2 || name.trim().length < 2} onClick={() => {
-            update((x) => updateProfile(x, { name: name.trim(), trainingDays: [...days].sort(), equipment: equip, sessionMinutes: minutes, bedtime: bedtime || undefined }, undefined, today, nowIso()))
+          <Btn disabled={!dirty || days.length < 2 || goals.length === 0 || name.trim().length < 2} onClick={() => {
+            update((x) => updateProfile(x, { name: name.trim(), goals, trainingDays: [...days].sort(), equipment: equip, sessionMinutes: minutes, bedtime: bedtime || undefined }, undefined, today, nowIso()))
           }}>Save Changes</Btn>
           <p className="text-xs text-mute">Schedule changes apply from today. Today's untouched quests are reissued.</p>
         </div>
+      </Panel>
+
+      <Panel title="Settings">
+        <button type="button" role="switch" aria-checked={sound} data-sfx="none" onClick={() => { setSoundOn(!sound); setSound(!sound) }}
+          className="flex w-full items-center justify-between gap-3 text-left">
+          <span><span className="block text-sm">Sound effects</span><span className="block text-xs text-mute">Button and System sounds. They follow your phone's silent switch.</span></span>
+          <span className={`relative h-7 w-12 shrink-0 rounded-full border transition ${sound ? 'border-sky-200 bg-sys/40' : 'border-edge bg-panel-2'}`}>
+            <span className={`absolute top-0.5 h-5.5 w-5.5 rounded-full bg-white transition-all ${sound ? 'left-6' : 'left-0.5'}`} />
+          </span>
+        </button>
       </Panel>
 
       <Panel title="Data">

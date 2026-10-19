@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Btn, Corners } from '../ui/components'
+import type { Sfx } from '../sfx'
 
 const UPDATED = 'October 19, 2026'
 
@@ -75,23 +76,23 @@ export function LegalSheet({ onClose }: { onClose: () => void }) {
 }
 
 /** Required acknowledgment: 13+ and the safety terms. */
-export function TermsConsent({ onAccept, cta = 'Accept' }: { onAccept: () => void; cta?: string }) {
+export function TermsConsent({ onAccept, cta = 'Accept', sfx }: { onAccept: () => void; cta?: string; sfx?: Sfx | 'none' }) {
   const [age, setAge] = useState(false)
   const [safety, setSafety] = useState(false)
   const [reading, setReading] = useState(false)
   const box = (on: boolean) => `mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center border text-xs ${on ? 'border-ok bg-ok/20 text-ok' : 'border-sky-200/70'}`
   return (
     <div className="grid gap-4">
-      <button type="button" className="flex gap-3 text-left text-sm" onClick={() => setAge(!age)} aria-pressed={age}>
+      <button type="button" className="flex gap-3 text-left text-sm" onClick={() => setAge(!age)} aria-pressed={age} data-sfx={age ? 'deselect' : 'select'}>
         <span className={box(age)} aria-hidden>{age ? '✓' : ''}</span>
         <span>I am 13 or older. If I'm under 18, a parent or guardian knows I'm using this.</span>
       </button>
-      <button type="button" className="flex gap-3 text-left text-sm" onClick={() => setSafety(!safety)} aria-pressed={safety}>
+      <button type="button" className="flex gap-3 text-left text-sm" onClick={() => setSafety(!safety)} aria-pressed={safety} data-sfx={safety ? 'deselect' : 'select'}>
         <span className={box(safety)} aria-hidden>{safety ? '✓' : ''}</span>
         <span>I understand THE SYSTEM is a game, not medical advice. I'll train within my limits, stop if something hurts, and check with a doctor if I have a health condition.</span>
       </button>
       <p className="text-xs text-mute">By continuing you agree to the <button type="button" className="text-sys underline" onClick={() => setReading(true)}>Privacy & Terms</button>.</p>
-      <Btn disabled={!age || !safety} onClick={onAccept}>{cta}</Btn>
+      <Btn disabled={!age || !safety} sfx={sfx} onClick={onAccept}>{cta}</Btn>
       {reading && <LegalSheet onClose={() => setReading(false)} />}
     </div>
   )
