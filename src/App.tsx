@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { dismissCeremony } from './core/engine'
 import { useAccount, useGame, type SyncStatus } from './store'
 import { cloudEnabled, type Account } from './cloud'
 import { Login } from './screens/Login'
 import { TermsConsent } from './screens/Legal'
 import { Corners } from './ui/components'
-import { nowIso } from './store'
+import { nowIso, todayKey } from './store'
+import { play } from './sfx'
+import { BootScreen, bootDue } from './ui/BootScreen'
+import { FLAME_TIERS, FlameTierUp, flameTierIndex } from './ui/StreakFlame'
 import { Onboarding } from './screens/Onboarding'
 import { SystemTab } from './screens/SystemTab'
 import { TrainingTab } from './screens/TrainingTab'
@@ -47,8 +50,32 @@ function Splash() {
 
 function Game({ account }: { account: Account | null }) {
   const { state, ready, commit, update, sync, wipe } = useGame(account?.uid ?? null)
-  const [tab, setTab] = useState<Tab>('system')
+  const [tab, setTabRaw] = useState<Tab>('system')
+  const [dir, setDir] = useState<'r' | 'l'>('r')
+  const setTab = (t: Tab) => setTabRaw((cur) => {
+    setDir(TABS.findIndex((x) => x.id === t) >= TABS.findIndex((x) => x.id === cur) ? 'r' : 'l')
+    return t
+  })
   const [toast, setToast] = useState<string | null>(null)
+  const uid = account?.uid ?? 'local'
+  const [booting, setBooting] = useState(() => bootDue(uid, todayKey()))
+  const [flameUp, setFlameUp] = useState<number | null>(null)
+  const pull = usePullToRefresh(!booting && flameUp === null && !state?.ceremonies.length)
+
+  // Celebrate each new streak flame tier once.
+  const streak = state?.streak
+  useEffect(() => {
+    if (streak === undefined) return
+    const key = `the-system:flame:${uid}`
+    const tier = flameTierIndex(streak)
+    let seen = -1
+    try { seen = Number(localStorage.getItem(key) ?? -1) } catch { return }
+    if (seen < 0 || tier < seen) { try { localStorage.setItem(key, String(tier)) } catch { /* ignore */ } return }
+    if (tier > seen) {
+      try { localStorage.setItem(key, String(tier)) } catch { /* ignore */ }
+      setFlameUp(tier)
+    }
+  }, [streak, uid])
 
   const ceremony = state?.ceremonies[0]
   // Quest clears are a light toast, not a full-screen notification.
@@ -94,7 +121,8 @@ function Game({ account }: { account: Account | null }) {
           {SYNC_LABEL[sync]}
         </span>
       </header>
-      <main className="relative z-10 px-4 pb-28 pt-5">
+      <PullIndicator {...pull} />
+      <main key={tab} className={`stagger relative z-10 px-4 pb-28 pt-5 tab-${dir}`} style={pull.dist ? { transform: `translateY(${pull.dist}px)`, transition: 'none' } : { transition: 'transform 250ms' }}>
         {tab === 'system' && <SystemTab s={state} update={update} goTraining={() => setTab('training')} />}
         {tab === 'training' && <TrainingTab s={state} update={update} onLogged={(m) => { setToast(`[Training recorded. ${m}]`); setTab('system') }} />}
         {tab === 'nutrition' && <NutritionTab s={state} />}
@@ -119,7 +147,57 @@ function Game({ account }: { account: Account | null }) {
           <div className="sys-panel anim-open max-w-sm px-4 py-3 text-center text-sm text-white">{toast}</div>
         </div>
       )}
-      {ceremony && ceremony.kind !== 'questClear' && <CeremonyOverlay c={ceremony} units={state.profile.units} onClose={() => update(dismissCeremony)} />}
+      {booting && state.profile.acceptedTermsAt && <BootScreen s={state} uid={uid} today={todayKey()} onDone={() => setBooting(false)} />}
+      {!booting && flameUp !== null && <FlameTierUp tier={FLAME_TIERS[flameUp]} streak={state.streak} onClose={() => setFlameUp(null)} />}
+      {!booting && flameUp === null && ceremony && ceremony.kind !== 'questClear' && <CeremonyOverlay c={ceremony} units={state.profile.units} onClose={() => update(dismissCeremony)} />}
+    </div>
+  )
+}
+
+const PULL_TRIGGER = 70
+
+/** Pull down at the top of a screen to reload the app (fetches updates and cloud saves). */
+function usePullToRefresh(enabled: boolean) {
+  const [dist, setDist] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const start = useRef<number | null>(null)
+  const ready = useRef(false)
+  useEffect(() => {
+    if (!enabled) return
+    const down = (e: TouchEvent) => { start.current = window.scrollY <= 0 ? e.touches[0].clientY : null }
+    const move = (e: TouchEvent) => {
+      if (start.current === null) return
+      const dy = e.touches[0].clientY - start.current
+      if (dy <= 0 || window.scrollY > 0) { setDist(0); return }
+      const d = Math.min(110, dy * 0.45)
+      if (d >= PULL_TRIGGER && !ready.current) play('select')
+      ready.current = d >= PULL_TRIGGER
+      setDist(d)
+    }
+    const up = () => {
+      if (ready.current) {
+        setLoading(true); setDist(PULL_TRIGGER); play('next')
+        setTimeout(() => window.location.reload(), 450)
+      } else setDist(0)
+      start.current = null; ready.current = false
+    }
+    window.addEventListener('touchstart', down, { passive: true })
+    window.addEventListener('touchmove', move, { passive: true })
+    window.addEventListener('touchend', up)
+    return () => { window.removeEventListener('touchstart', down); window.removeEventListener('touchmove', move); window.removeEventListener('touchend', up) }
+  }, [enabled])
+  return { dist, loading }
+}
+
+function PullIndicator({ dist, loading }: { dist: number; loading: boolean }) {
+  if (!dist && !loading) return null
+  const ready = dist >= PULL_TRIGGER
+  return (
+    <div className={`ptr flex flex-col items-center ${ready ? 'ready' : ''} ${loading ? 'loading' : ''}`} style={{ top: `calc(env(safe-area-inset-top) + 52px + ${dist / 3}px)`, opacity: Math.min(1, dist / 40) }}>
+      <svg className="ptr-icon text-sky-200" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: loading ? undefined : `rotate(${dist * 3}deg)` }}>
+        <path d="M21 12a9 9 0 1 1-3-6.7 M21 4v5h-5" />
+      </svg>
+      <span className="sys-title mt-1 text-[10px] text-glow">{loading ? 'Syncing…' : ready ? 'Release to sync' : 'Pull to sync'}</span>
     </div>
   )
 }

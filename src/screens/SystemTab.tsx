@@ -5,6 +5,7 @@ import { BOSS_BY_ID, RAID } from '../core/raids'
 import type { GameState, Quest } from '../core/types'
 import { Bar, Btn, Panel, RANK_COLOR, RANK_NAME, RankEmblem, Tag } from '../ui/components'
 import { nowIso, todayKey } from '../store'
+import { StreakBadge } from '../ui/StreakFlame'
 import { STAT_ABBR, STAT_COLOR, STAT_LABEL } from './labels'
 
 const DAILY: Quest['type'][] = ['main', 'side', 'recovery', 'habit', 'sleep']
@@ -62,9 +63,9 @@ export function SystemTab({ s, update, goTraining }: { s: GameState; update: (fn
 
         <div className="my-4 h-px bg-gradient-to-r from-transparent via-sky-200/50 to-transparent" />
 
-        <div className="grid grid-cols-3 text-center">
+        <div className="grid grid-cols-3 items-end text-center">
           <Metric label="Power" value={powerRating(s).toLocaleString()} />
-          <Metric label="Streak" value={`${s.streak}`} />
+          <StreakBadge streak={s.streak} best={s.bestStreak} />
           <Metric label="Total EXP" value={s.xp.toLocaleString()} />
         </div>
       </Panel>
