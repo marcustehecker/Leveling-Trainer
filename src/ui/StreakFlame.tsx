@@ -18,6 +18,8 @@ export interface FlameTier {
   ring?: 'faint' | 'bright'
   smoke?: boolean
   star?: boolean
+  /** The 365+ tier: magic circle, lightning, orbits, crown and shockwaves. */
+  monarch?: boolean
 }
 
 // Order follows Marcus's reference sheet, read left to right, top to bottom.
@@ -31,7 +33,7 @@ export const FLAME_TIERS: FlameTier[] = [
   { at: 100, name: 'Violet Flame', colors: ['#3b0764', '#8b3df0', '#c084fc', '#faf5ff'], glow: '#a855f7', tongues: 8, spread: 0.68, height: 0.92, embers: 7, shards: true, ring: 'faint' },
   { at: 150, name: 'Solar Flame', colors: ['#92400e', '#f59e0b', '#fcd34d', '#fffbeb'], glow: '#fbbf24', tongues: 9, spread: 0.72, height: 0.96, embers: 9, shards: true, ring: 'bright' },
   { at: 200, name: 'Crimson Hellfire', colors: ['#450a0a', '#dc2626', '#f87171', '#fff1f2'], glow: '#ef4444', tongues: 9, spread: 0.76, height: 0.96, embers: 8, smoke: true },
-  { at: 365, name: "Monarch's Flame", colors: ['#1e1b4b', '#6d28d9', '#a78bfa', '#f5f3ff'], glow: '#7c3aed', tongues: 9, spread: 0.8, height: 0.98, embers: 10, shards: true, ring: 'bright', smoke: true, star: true },
+  { at: 365, name: "Monarch's Flame", colors: ['#0b0420', '#5b21b6', '#a78bfa', '#ffffff'], glow: '#8b5cf6', tongues: 9, spread: 0.72, height: 1, embers: 18, shards: true, smoke: true, star: true, monarch: true },
 ]
 
 export function flameTierIndex(streak: number) {
@@ -91,9 +93,11 @@ export function Flame({ tier, size = 48, still }: { tier: FlameTier; size?: numb
           <filter id={`fe${id}`} x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation=".6" /></filter>
           <radialGradient id={`fg${id}`} cx=".5" cy=".9" r=".6"><stop offset="0" stopColor={core} stopOpacity=".9" /><stop offset=".4" stopColor={inner} stopOpacity=".35" /><stop offset="1" stopColor={body} stopOpacity="0" /></radialGradient>
         </defs>
+        {tier.monarch && <MonarchBack id={id} still={still} />}
+        <g transform={tier.monarch ? 'translate(9 14) scale(.82)' : undefined}>
         <ellipse cx="50" cy="86" rx={22 + tier.spread * 26} ry="12" fill={`url(#fg${id})`} />
-        {tier.smoke && tongues({ ...tier, spread: tier.spread * 1.15, height: tier.height * 0.92 }, 1.12).map((t) => (
-          <path key={`s${t.i}`} d={t.d} fill={edge} opacity=".75" className="flame-tongue" style={anim(t.i + 2, 2.4)} />
+        {tier.smoke && tongues({ ...tier, spread: tier.spread * 1.15, height: tier.height * (tier.monarch ? 0.8 : 0.92) }, 1.12).map((t) => (
+          <path key={`s${t.i}`} d={t.d} fill={edge} opacity={tier.monarch ? 0.95 : 0.75} stroke={tier.monarch ? '#7c3aed' : undefined} strokeWidth={tier.monarch ? 0.8 : undefined} className="flame-tongue" style={anim(t.i + 2, 2.4)} />
         ))}
         {tier.ring && <ellipse cx="50" cy="70" rx="44" ry="10" fill="none" stroke={tier.ring === 'bright' ? core : inner} strokeWidth={tier.ring === 'bright' ? 1.6 : 1} opacity={tier.ring === 'bright' ? 0.9 : 0.6} className="flame-halo" strokeDasharray="160 40" />}
         <g filter={`url(#fe${id})`}>
@@ -106,13 +110,15 @@ export function Flame({ tier, size = 48, still }: { tier: FlameTier; size?: numb
           ))}
           <path d={tongue(50, 9, 30 * tier.height + 8, 2, BASE - 3)} fill={core} opacity=".95" className="flame-tongue" style={anim(0, 0.9)} />
         </g>
+        </g>
         {shards.map(([x, y], i) => <path key={`c${i}`} d={SHARD} transform={`translate(${x} ${y}) rotate(${i % 2 ? 20 : -20})`} fill={inner} className="flame-shard" style={still ? undefined : { animationDelay: `${-i * 0.5}s` }} />)}
-        {tier.star && (
+        {tier.star && !tier.monarch && (
           <g transform="translate(50 6)" className="flame-star">
             <path d="M0 -9 L1.8 -1.8 L9 0 L1.8 1.8 L0 9 L-1.8 1.8 L-9 0 L-1.8 -1.8 Z" fill={core} />
             <path d="M0 -14 L0 14 M-5 0 L5 0" stroke={core} strokeWidth=".6" opacity=".8" />
           </g>
         )}
+        {tier.monarch && <MonarchFront still={still} />}
       </svg>
       {Array.from({ length: still ? 0 : tier.embers }, (_, i) => (
         <i key={i} className="flame-spark" style={{ left: `${22 + ((i * 37) % 56)}%`, animationDelay: `${(i * 0.41) % 2.4}s`, background: i % 2 ? core : inner, ['--dx' as string]: `${(i % 3) * 6 - 6}px` }} />
@@ -121,8 +127,83 @@ export function Flame({ tier, size = 48, still }: { tier: FlameTier; size?: numb
   )
 }
 
+const CYAN = '#67e8f9'
+const RUNES = Array.from({ length: 24 }, (_, i) => i)
+const BOLTS = ['M30 40 L26 50 L31 52 L24 66', 'M71 34 L76 46 L70 48 L78 62', 'M50 22 L46 30 L52 32 L47 42', 'M18 62 L12 68 L17 70 L9 78', 'M83 60 L89 67 L84 69 L92 77']
+
+/** Monarch layers drawn behind the fire: aura rays, a spinning magic circle and shockwaves. */
+function MonarchBack({ id, still }: { id: string; still?: boolean }) {
+  return (
+    <g>
+      <defs>
+        <radialGradient id={`ma${id}`} cx=".5" cy=".55" r=".5"><stop offset="0" stopColor="#c4b5fd" stopOpacity=".55" /><stop offset=".5" stopColor="#6d28d9" stopOpacity=".25" /><stop offset="1" stopColor="#1e1b4b" stopOpacity="0" /></radialGradient>
+      </defs>
+      <circle cx="50" cy="52" r="58" fill={`url(#ma${id})`} className={still ? '' : 'mon-breathe'} />
+      <g className={still ? '' : 'mon-rays'} style={{ transformOrigin: '50px 52px' }} opacity=".55">
+        {Array.from({ length: 16 }, (_, i) => (
+          <path key={i} d="M50 52 L48.6 -12 L51.4 -12 Z" fill={i % 2 ? '#a78bfa' : CYAN} opacity={i % 2 ? 0.5 : 0.3} transform={`rotate(${i * 22.5} 50 52)`} />
+        ))}
+      </g>
+      {/* Magic circle lying flat under the fire */}
+      <g transform="translate(50 88) scale(1 .32)">
+        <g className={still ? '' : 'mon-spin'}>
+          <circle r="46" fill="none" stroke="#a78bfa" strokeWidth="1.6" />
+          <circle r="40" fill="none" stroke={CYAN} strokeWidth=".8" strokeDasharray="2 3" />
+          <circle r="28" fill="none" stroke="#a78bfa" strokeWidth="1" />
+          <path d="M0 -40 L34.6 20 L-34.6 20 Z M0 40 L-34.6 -20 L34.6 -20 Z" fill="none" stroke="#c4b5fd" strokeWidth=".9" />
+          {RUNES.map((i) => <rect key={i} x="-1" y="-45" width="2" height={i % 3 ? 3 : 5} fill={CYAN} transform={`rotate(${i * 15})`} />)}
+        </g>
+      </g>
+      {!still && [0, 1, 2].map((i) => (
+        <ellipse key={i} cx="50" cy="88" rx="20" ry="6" fill="none" stroke={i === 1 ? CYAN : '#c4b5fd'} strokeWidth="1.2" className="mon-wave" style={{ animationDelay: `${i * 0.8}s` }} />
+      ))}
+    </g>
+  )
+}
+
+/** Monarch layers in front of the fire: orbit rings, lightning and a crown of light. */
+function MonarchFront({ still }: { still?: boolean }) {
+  const orbit = 'M6 58 A44 12 0 1 0 94 58 A44 12 0 1 0 6 58'
+  return (
+    <g>
+      {[-22, 22].map((rot, i) => (
+        <g key={rot} transform={`rotate(${rot} 50 58)`}>
+          <path d={orbit} fill="none" stroke={i ? CYAN : '#c4b5fd'} strokeWidth="1" strokeDasharray="120 60" opacity=".85" className={still ? '' : 'flame-halo'} />
+          {!still && (
+            <circle r="2.2" fill="#fff" style={{ filter: `drop-shadow(0 0 3px ${i ? CYAN : '#a78bfa'})` }}>
+              <animateMotion dur={i ? '2.6s' : '3.4s'} repeatCount="indefinite" path={orbit} keyPoints={i ? '1;0' : '0;1'} keyTimes="0;1" calcMode="linear" />
+            </circle>
+          )}
+        </g>
+      ))}
+      {!still && BOLTS.map((d, i) => (
+        <path key={i} d={d} fill="none" stroke={i % 2 ? CYAN : '#e9d5ff'} strokeWidth="1.1" strokeLinejoin="round" className="mon-bolt" style={{ animationDelay: `${i * 0.47}s`, animationDuration: `${1.9 + i * 0.37}s` }} />
+      ))}
+      {/* Crown of light */}
+      <g className={still ? '' : 'flame-star'}>
+        <path d="M41 19 L42.5 11 L46.5 15.5 L50 8 L53.5 15.5 L57.5 11 L59 19 Z" fill="#f5f3ff" stroke="#a78bfa" strokeWidth=".7" />
+        <circle cx="50" cy="15" r="1.1" fill={CYAN} />
+      </g>
+      <g transform="translate(50 -2)">
+        <g className={still ? '' : 'mon-star'}>
+          <path d="M0 -10 L1.8 -1.8 L10 0 L1.8 1.8 L0 10 L-1.8 1.8 L-10 0 L-1.8 -1.8 Z" fill="#fff" />
+          <path d="M0 -17 V17 M-17 0 H17" stroke="#fff" strokeWidth=".5" opacity=".9" />
+          <circle r="2.4" fill={CYAN} opacity=".8" />
+        </g>
+      </g>
+    </g>
+  )
+}
+
 /** The decorative line with a diamond that sits under each flame, as on the reference. */
 export function FlameBase({ tier, width = 90 }: { tier: FlameTier; width?: number }) {
+  if (tier.monarch) return (
+    <svg width={width} height="12" viewBox="0 0 90 12" aria-hidden>
+      <path d="M2 6 H34 M56 6 H88 M8 3 H30 M60 3 H82 M8 9 H30 M60 9 H82" stroke="#a78bfa" strokeWidth=".8" />
+      <path d="M45 0 L51 6 L45 12 L39 6 Z" fill="#f5f3ff" stroke={CYAN} strokeWidth=".8" />
+      <circle cx="36" cy="6" r="1.2" fill={CYAN} /><circle cx="54" cy="6" r="1.2" fill={CYAN} />
+    </svg>
+  )
   return (
     <svg width={width} height="8" viewBox="0 0 90 8" aria-hidden>
       <path d="M2 4 H38 M52 4 H88" stroke={tier.colors[1]} strokeWidth="1" opacity=".8" />
@@ -186,6 +267,7 @@ export function FlameTierUp({ tier, streak, onClose }: { tier: FlameTier; streak
       <div className="relative cs-hero flex flex-col items-center"><Flame tier={tier} size={210} /><FlameBase tier={tier} width={180} /></div>
       <div className="relative cs-sub sys-title mt-2 text-sm text-mute">{streak} day streak</div>
       <div className="relative cs-slam sys-title glow-text mt-1 text-3xl text-white">{tier.name}</div>
+      {tier.monarch && <div className="relative cs-sub-late sys-title glow-text mt-3 text-5xl text-violet-200" style={{ letterSpacing: '.4em', paddingLeft: '.4em' }}>Arise</div>}
       <div className="relative cs-sub-late mt-10 sys-title text-xs text-mute">Tap to continue</div>
     </div>,
     document.body,

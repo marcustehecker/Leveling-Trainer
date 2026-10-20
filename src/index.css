@@ -212,6 +212,18 @@ body {
 @keyframes flame-star { 0%, 100% { opacity: .75; scale: .9; } 50% { opacity: 1; scale: 1.15; } }
 @keyframes flame-spark { 0% { opacity: 0; transform: translateY(0); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx, 4px), -46px); } }
 
+/* Monarch's Flame */
+.mon-spin { animation: cs-spin 9s linear infinite; }
+.mon-rays { animation: cs-spin 22s linear infinite; }
+.mon-breathe { transform-box: fill-box; transform-origin: center; animation: mon-breathe 2.6s ease-in-out infinite; }
+.mon-wave { transform-box: fill-box; transform-origin: center; animation: mon-wave 2.4s ease-out infinite; opacity: 0; }
+.mon-bolt { opacity: 0; animation: mon-bolt 2s steps(1, end) infinite; filter: drop-shadow(0 0 2px #67e8f9); }
+.mon-star { transform-box: fill-box; transform-origin: center; animation: mon-star 3s ease-in-out infinite; }
+@keyframes mon-breathe { 0%, 100% { scale: .92; opacity: .8; } 50% { scale: 1.06; opacity: 1; } }
+@keyframes mon-wave { 0% { scale: .4; opacity: .9; } 100% { scale: 2.4; opacity: 0; } }
+@keyframes mon-bolt { 0%, 82%, 100% { opacity: 0; } 84% { opacity: 1; } 87% { opacity: .2; } 90% { opacity: 1; } 94% { opacity: 0; } }
+@keyframes mon-star { 0%, 100% { rotate: 0deg; scale: .85; } 50% { rotate: 45deg; scale: 1.15; } }
+
 /* ---------- Screen transitions ---------- */
 .tab-r { animation: slide-in-r 300ms cubic-bezier(.2, .8, .2, 1) both; }
 .tab-l { animation: slide-in-l 300ms cubic-bezier(.2, .8, .2, 1) both; }
