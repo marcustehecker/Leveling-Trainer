@@ -78,6 +78,7 @@ export async function deleteAccount(uid: string): Promise<void> {
   const user = a.currentUser
   if (!user || user.uid !== uid) throw new Error('Sign in again before deleting your account.')
   await fs.deleteDoc(fs.doc(fs.getFirestore(app), 'hunters', uid))
+  await fs.deleteDoc(fs.doc(fs.getFirestore(app), 'pushSubs', uid)).catch(() => undefined)
   try {
     await auth.deleteUser(user)
   } catch (e) {
@@ -86,4 +87,37 @@ export async function deleteAccount(uid: string): Promise<void> {
     await auth.reauthenticateWithPopup(user, new auth.GoogleAuthProvider())
     await auth.deleteUser(user)
   }
+}
+
+// ---------- Reminders ----------
+// The reminder sender (a scheduled GitHub Action) reads pushSubs/{uid} and the
+// player's save, then sends web push notifications at the chosen local time.
+
+export interface ReminderPrefs { morning: string; evening: boolean; tz: string }
+interface ReminderDoc extends ReminderPrefs { subscription: PushSubscriptionJSON; updatedAt: number }
+
+/** Public key the sender signs pushes with; the sender publishes it on its first run. */
+export async function reminderKey(): Promise<string | null> {
+  const { app, fs } = await load()
+  const snap = await fs.getDoc(fs.doc(fs.getFirestore(app), 'public', 'vapid'))
+  return snap.exists() ? (snap.data() as { publicKey?: string }).publicKey ?? null : null
+}
+
+export async function getReminder(uid: string): Promise<ReminderPrefs | null> {
+  const { app, fs } = await load()
+  const snap = await fs.getDoc(fs.doc(fs.getFirestore(app), 'pushSubs', uid))
+  if (!snap.exists()) return null
+  const d = snap.data() as ReminderDoc
+  return { morning: d.morning, evening: d.evening, tz: d.tz }
+}
+
+export async function saveReminder(uid: string, subscription: PushSubscriptionJSON, prefs: ReminderPrefs): Promise<void> {
+  const { app, fs } = await load()
+  const doc: ReminderDoc = { ...prefs, subscription, updatedAt: Date.now() }
+  await fs.setDoc(fs.doc(fs.getFirestore(app), 'pushSubs', uid), doc)
+}
+
+export async function removeReminder(uid: string): Promise<void> {
+  const { app, fs } = await load()
+  await fs.deleteDoc(fs.doc(fs.getFirestore(app), 'pushSubs', uid))
 }

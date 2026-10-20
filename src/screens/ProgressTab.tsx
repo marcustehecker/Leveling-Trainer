@@ -1,8 +1,181 @@
-import { ACHIEVEMENTS } from '../core/achievements'
+import { useMemo, useState } from 'react'
+import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../core/achievements'
 import { EXERCISE_BY_ID } from '../core/exercises'
-import type { GameState } from '../core/types'
-import { Panel, RANK_COLOR, RankEmblem, Tag } from '../ui/components'
-import { todayKey, toDisplayWeight, weightUnit } from '../store'
+import { addDays, weekStart } from '../core/dates'
+import { logBodyWeight, statLevel } from '../core/engine'
+import type { GameState, StatId } from '../core/types'
+import { Btn, Panel, RANK_COLOR, RankEmblem, Tag } from '../ui/components'
+import { fromDisplayWeight, nowIso, todayKey, toDisplayWeight, weightUnit } from '../store'
+import { STAT_COLOR, STAT_LABEL } from './labels'
+
+type Series = { name: string; color: string; points: { date: string; v: number }[] }
+
+/** Multi-series line chart over dates. */
+function LineChart({ series, unit = '', label, height = 150 }: { series: Series[]; unit?: string; label: string; height?: number }) {
+  const all = series.flatMap((x) => x.points)
+  if (all.length === 0) return <p className="py-6 text-center text-sm text-mute">No data yet.</p>
+  const W = 320, H = height
+  const pad = { l: 38, r: 10, t: 10, b: 20 }
+  const dates = [...new Set(all.map((p) => p.date))].sort()
+  const t0 = Date.parse(dates[0]), t1 = Date.parse(dates[dates.length - 1])
+  const vs = all.map((p) => p.v)
+  let lo = Math.min(...vs), hi = Math.max(...vs)
+  if (hi === lo) { hi += 1; lo = Math.max(0, lo - 1) }
+  const span = hi - lo
+  lo = Math.max(0, lo - span * 0.1); hi += span * 0.1
+  const x = (d: string) => pad.l + (t1 === t0 ? (W - pad.l - pad.r) / 2 : ((Date.parse(d) - t0) / (t1 - t0)) * (W - pad.l - pad.r))
+  const y = (v: number) => H - pad.b - ((v - lo) / (hi - lo)) * (H - pad.t - pad.b)
+  const ticks = [lo, (lo + hi) / 2, hi]
+  const fmt = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v >= 100 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString())
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label}>
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#1e3a5f" strokeDasharray="2 4" />
+          <text x={pad.l - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill="#8a9bb4">{fmt(t)}{unit}</text>
+        </g>
+      ))}
+      {series.map((sr) => {
+        const pts = [...sr.points].sort((a, b) => a.date.localeCompare(b.date))
+        const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')
+        return (
+          <g key={sr.name}>
+            <path d={d} fill="none" stroke={sr.color} strokeWidth="2" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 3px ${sr.color})` }} />
+            {pts.length <= 40 && pts.map((p, i) => <circle key={i} cx={x(p.date)} cy={y(p.v)} r="2.2" fill={sr.color} />)}
+          </g>
+        )
+      })}
+      <text x={pad.l} y={H - 4} fontSize="9" fill="#8a9bb4">{dates[0].slice(5)}</text>
+      <text x={W - pad.r} y={H - 4} fontSize="9" fill="#8a9bb4" textAnchor="end">{dates[dates.length - 1].slice(5)}</text>
+    </svg>
+  )
+}
+
+function BarChart({ bars, label, color = '#38bdf8' }: { bars: { label: string; v: number }[]; label: string; color?: string }) {
+  const W = 320, H = 130, pad = { l: 24, r: 6, t: 14, b: 20 }
+  const max = Math.max(1, ...bars.map((b) => b.v))
+  const bw = (W - pad.l - pad.r) / bars.length
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label}>
+      <line x1={pad.l} x2={W - pad.r} y1={H - pad.b} y2={H - pad.b} stroke="#1e3a5f" />
+      {bars.map((b, i) => {
+        const h = (b.v / max) * (H - pad.t - pad.b)
+        const bx = pad.l + i * bw + bw * 0.18
+        return (
+          <g key={i}>
+            <rect x={bx} y={H - pad.b - h} width={bw * 0.64} height={h} rx="1.5" fill={color} opacity={i === bars.length - 1 ? 1 : 0.7} style={{ filter: `drop-shadow(0 0 3px ${color})` }} />
+            {b.v > 0 && <text x={bx + bw * 0.32} y={H - pad.b - h - 3} textAnchor="middle" fontSize="8" fill="#cfe4ff">{b.v}</text>}
+            {i % 2 === bars.length % 2 && <text x={bx + bw * 0.32} y={H - 6} textAnchor="middle" fontSize="8" fill="#8a9bb4">{b.label}</text>}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+/** Best effort per workout day: estimated 1-rep max for weighted lifts, else best reps or seconds. */
+function strengthSeries(s: GameState, id: string): { points: { date: string; v: number }[]; unit: string; kind: string } {
+  const ex = EXERCISE_BY_ID[id]
+  const units = s.profile.units
+  const byDate = new Map<string, number>()
+  let weighted = false
+  for (const w of s.workouts) for (const e of w.exercises) {
+    if (e.exerciseId !== id) continue
+    for (const x of e.sets) {
+      if (!x.done) continue
+      let v: number
+      if (ex?.kind === 'time') v = x.seconds ?? 0
+      else if ((x.weightKg ?? 0) > 0) { weighted = true; v = toDisplayWeight((x.weightKg ?? 0) * (1 + (x.reps ?? 0) / 30), units) }
+      else v = x.reps ?? 0
+      byDate.set(w.date, Math.max(byDate.get(w.date) ?? 0, Math.round(v * 10) / 10))
+    }
+  }
+  const points = [...byDate].map(([date, v]) => ({ date, v }))
+  return ex?.kind === 'time' ? { points, unit: 's', kind: 'Longest hold (seconds)' }
+    : weighted ? { points, unit: '', kind: `Estimated 1-rep max (${weightUnit(units)})` } : { points, unit: '', kind: 'Best set (reps)' }
+}
+
+function StrengthChart({ s }: { s: GameState }) {
+  const options = useMemo(() => {
+    const count = new Map<string, number>()
+    for (const w of s.workouts) for (const e of w.exercises) if (EXERCISE_BY_ID[e.exerciseId] && EXERCISE_BY_ID[e.exerciseId].pattern !== 'cardio' && EXERCISE_BY_ID[e.exerciseId].pattern !== 'mobility') count.set(e.exerciseId, (count.get(e.exerciseId) ?? 0) + 1)
+    return [...count].sort((a, b) => b[1] - a[1]).map(([id]) => id)
+  }, [s.workouts])
+  const [id, setId] = useState<string | null>(null)
+  const cur = id && options.includes(id) ? id : options[0]
+  if (!cur) return <p className="text-sm text-mute">Log workouts to see your strength over time.</p>
+  const data = strengthSeries(s, cur)
+  return (
+    <div className="grid gap-2">
+      <select value={cur} onChange={(e) => setId(e.target.value)} className="h-11 rounded border border-edge bg-panel-2 px-3 outline-none focus:border-sys">
+        {options.map((o) => <option key={o} value={o}>{EXERCISE_BY_ID[o].name}</option>)}
+      </select>
+      <div className="text-xs text-mute">{data.kind}</div>
+      <LineChart label={`${EXERCISE_BY_ID[cur].name} progress`} unit={data.unit} series={[{ name: cur, color: '#a78bfa', points: data.points }]} />
+    </div>
+  )
+}
+
+function BodyWeight({ s, update }: { s: GameState; update: (fn: (s: GameState) => GameState) => void }) {
+  const units = s.profile.units
+  const today = todayKey()
+  const list = s.bodyWeights ?? []
+  const latest = list[list.length - 1]
+  const [val, setVal] = useState('')
+  const n = Number(val)
+  const ok = val !== '' && Number.isFinite(n) && n > (units === 'imperial' ? 50 : 25) && n < (units === 'imperial' ? 700 : 320)
+  const first = list[0]
+  const change = first && latest && list.length > 1 ? toDisplayWeight(latest.kg - first.kg, units) : null
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-end gap-2">
+        <label className="grid flex-1 gap-1 text-xs text-mute">Today's weight ({weightUnit(units)})
+          <input inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} placeholder={latest ? String(toDisplayWeight(latest.kg, units)) : 'e.g. 170'}
+            className="h-11 rounded border border-edge bg-panel-2 px-3 text-base text-ink outline-none focus:border-sys" />
+        </label>
+        <Btn disabled={!ok} sfx="select" onClick={() => { update((x) => logBodyWeight(x, fromDisplayWeight(n, units), today, nowIso())); setVal('') }}>Log</Btn>
+      </div>
+      {change !== null && <p className="text-xs text-mute">Change since {first.date}: <span className="text-ink">{change > 0 ? '+' : ''}{change}{weightUnit(units)}</span></p>}
+      <LineChart label="Body weight over time" series={[{ name: 'Body weight', color: '#34d399', points: list.map((b) => ({ date: b.date, v: toDisplayWeight(b.kg, units) })) }]} />
+      <p className="text-[11px] text-mute">Optional. Weight goes up and down day to day; watch the trend, not single days.</p>
+    </div>
+  )
+}
+
+function WeeklyChart({ s }: { s: GameState }) {
+  const [mode, setMode] = useState<'sessions' | 'minutes'>('sessions')
+  const thisWeek = weekStart(todayKey())
+  const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisWeek, (i - 11) * 7))
+  const bars = weeks.map((w) => {
+    const ws = s.workouts.filter((x) => weekStart(x.date) === w)
+    return { label: w.slice(5).replace('-', '/'), v: mode === 'sessions' ? ws.length : ws.reduce((m, x) => m + (x.durationMin || 0), 0) }
+  })
+  return (
+    <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-2">
+        {(['sessions', 'minutes'] as const).map((m) => (
+          <button key={m} data-sfx="tab" onClick={() => setMode(m)} className={`sys-title h-9 rounded border text-xs ${mode === m ? 'border-sys bg-sys/15 text-glow' : 'border-edge text-mute'}`}>{m === 'sessions' ? 'Workouts' : 'Minutes'}</button>
+        ))}
+      </div>
+      <BarChart label={`${mode} per week`} bars={bars} color={mode === 'sessions' ? '#38bdf8' : '#f59e0b'} />
+    </div>
+  )
+}
+
+const STAT_IDS: StatId[] = ['strength', 'endurance', 'agility', 'vitality', 'discipline', 'recovery']
+
+function StatChart({ s }: { s: GameState }) {
+  const hist = [...(s.statHistory ?? []), { date: todayKey(), stats: s.stats }]
+  const series: Series[] = STAT_IDS.map((id) => ({ name: STAT_LABEL[id], color: STAT_COLOR[id], points: hist.map((h) => ({ date: h.date, v: statLevel(h.stats[id]) })) }))
+  return (
+    <div className="grid gap-2">
+      {hist.length < 2 ? <p className="text-sm text-mute">Your stat history builds up day by day. Check back tomorrow.</p> : <LineChart label="Stat levels over time" series={series} />}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {STAT_IDS.map((id) => <span key={id} className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-full" style={{ background: STAT_COLOR[id] }} />{STAT_LABEL[id]} {statLevel(s.stats[id])}</span>)}
+      </div>
+    </div>
+  )
+}
 
 function XpChart({ s }: { s: GameState }) {
   const pts = [...s.xpHistory.slice(-60), { date: todayKey(), xp: s.xp }]
@@ -34,7 +207,7 @@ function XpChart({ s }: { s: GameState }) {
   )
 }
 
-export function ProgressTab({ s }: { s: GameState }) {
+export function ProgressTab({ s, update }: { s: GameState; update: (fn: (s: GameState) => GameState) => void }) {
   const units = s.profile.units
   const records = Object.entries(s.records).filter(([id]) => EXERCISE_BY_ID[id])
   return (
@@ -43,6 +216,11 @@ export function ProgressTab({ s }: { s: GameState }) {
         <XpChart s={s} />
         <p className="mt-2 text-xs text-mute">Red dots mark days XP was lost.</p>
       </Panel>
+
+      <Panel title="Strength"><StrengthChart s={s} /></Panel>
+      <Panel title="Training Volume"><WeeklyChart s={s} /></Panel>
+      <Panel title="Stats"><StatChart s={s} /></Panel>
+      <Panel title="Body Weight"><BodyWeight s={s} update={update} /></Panel>
 
       <Panel title="Rank History">
         <ol className="grid gap-2">
@@ -69,16 +247,30 @@ export function ProgressTab({ s }: { s: GameState }) {
         )}
       </Panel>
 
-      <Panel title="Achievements" right={<span className="text-xs text-mute">{Object.keys(s.achievements).length}/{ACHIEVEMENTS.length}</span>}>
-        <div className="grid grid-cols-2 gap-2">
-          {ACHIEVEMENTS.map((a) => {
-            const got = s.achievements[a.id]
+      <Panel title="Achievements" right={<span className="text-xs text-mute">{Object.keys(s.achievements).filter((k) => ACHIEVEMENTS.some((a) => a.id === k)).length}/{ACHIEVEMENTS.length}</span>}>
+        <div className="grid gap-5">
+          {ACHIEVEMENT_CATEGORIES.map((cat) => {
+            const list = ACHIEVEMENTS.filter((a) => a.category === cat)
+            const got = list.filter((a) => s.achievements[a.id]).length
             return (
-              <div key={a.id} className={`rounded border p-2 ${got ? (a.rare ? 'border-rare/60 bg-rare/10' : 'border-sys/50 bg-sys/10') : 'border-edge/50 opacity-45'}`}>
-                <div className={`text-sm font-medium ${got && a.rare ? 'text-rare' : ''}`}>{got ? a.name : '???'}</div>
-                <div className="text-[11px] text-mute">{a.description}</div>
-                {a.title && got && <div className="mt-1"><Tag color="#a855f7">Title</Tag></div>}
-              </div>
+              <details key={cat} open={cat === 'Training'}>
+                <summary className="flex cursor-pointer items-center justify-between py-1">
+                  <span className="sys-title text-xs text-glow">{cat}</span>
+                  <span className="text-xs text-mute">{got}/{list.length}</span>
+                </summary>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {list.map((a) => {
+                    const have = s.achievements[a.id]
+                    return (
+                      <div key={a.id} className={`rounded border p-2 ${have ? (a.rare ? 'border-rare/60 bg-rare/10' : 'border-sys/50 bg-sys/10') : 'border-edge/50 opacity-50'}`}>
+                        <div className={`text-sm font-medium ${have && a.rare ? 'text-rare' : ''}`}>{have || !a.rare ? a.name : '???'}</div>
+                        <div className="text-[11px] text-mute">{a.description}</div>
+                        {a.title && <div className="mt-1"><Tag color={have ? '#a855f7' : '#8a9bb4'}>Title: {have ? a.title : '???'}</Tag></div>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </details>
             )
           })}
         </div>

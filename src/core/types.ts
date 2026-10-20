@@ -137,6 +137,7 @@ export type Ceremony =
   | { kind: 'achievement'; id: string }
   | { kind: 'questClear'; title: string; xp: number }
   | { kind: 'trialUnlocked'; rank: RankId }
+  | { kind: 'record'; items: { exerciseId: string; before: PersonalRecord; after: PersonalRecord }[] }
 
 export interface LogEntry {
   id: string
@@ -180,6 +181,10 @@ export interface GameState {
   log: LogEntry[]
   ceremonies: Ceremony[]
   seq: number
+  /** Body weight entries in kg, oldest first. */
+  bodyWeights?: { date: DateKey; kg: number }[]
+  /** Daily snapshot of stat XP, for progress charts. */
+  statHistory?: { date: DateKey; stats: Record<StatId, number> }[]
   /** Wall-clock ms of the last change; newest copy wins when syncing. */
   updatedAt?: number
 }

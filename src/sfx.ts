@@ -2,7 +2,7 @@
 // Every button plays a sound automatically; set data-sfx on a button to pick a
 // different one, or data-sfx="none" to silence it.
 
-export type Sfx = 'tap' | 'select' | 'deselect' | 'next' | 'back' | 'tab' | 'toggleOn' | 'toggleOff' | 'deny' | 'complete' | 'reveal' | 'stat' | 'type'
+export type Sfx = 'tap' | 'select' | 'deselect' | 'next' | 'back' | 'tab' | 'toggleOn' | 'toggleOff' | 'deny' | 'complete' | 'reveal' | 'stat' | 'type' | 'levelup' | 'rankup' | 'record'
 
 const KEY = 'the-system:sfx'
 let ctx: AudioContext | null = null
@@ -236,6 +236,38 @@ export function play(kind: Sfx, level = 0) {
       tone(a, { f: 55, to: 38, dur: 0.8, vol: 0.45 })
       ;[0, 4, 7, 9].forEach((k, i) => chime(a, note(5 + k), 0.25 + i * 0.09, 0.7, 0.1))
       break
+    case 'levelup': {
+      // Beam sweep, impact on the flash, number roll, then the slam chord.
+      whoosh(a, { at: 0.1, dur: 0.45, from: 300, to: 8000, vol: 0.14 })
+      tone(a, { f: 65, to: 34, at: 0.45, dur: 0.9, vol: 0.6 })
+      click(a, 0.45, 0.25, 2000)
+      for (let i = 0; i < 8; i++) tone(a, { f: note(i + 3), at: 0.7 + i * 0.1, dur: 0.07, vol: 0.06, type: 'triangle' })
+      ;[0, 4, 7, 9].forEach((k, i) => chime(a, note(k + 2), 1.0 + i * 0.03, 1.1, 0.16))
+      tone(a, { f: note(2) / 2, at: 1.0, dur: 1.4, vol: 0.12, type: 'triangle', attack: 0.02 })
+      tone(a, { f: note(11), at: 1.05, dur: 1.6, vol: 0.05, attack: 0.1 })
+      break
+    }
+    case 'rankup': {
+      // Rumble while the gate shakes, the doors grind open, impact, then a wide chord.
+      tone(a, { f: 42, at: 0, dur: 1.6, vol: 0.35, attack: 0.4 })
+      tone(a, { f: 44, at: 0, dur: 1.6, vol: 0.3, attack: 0.4 })
+      whoosh(a, { at: 0.9, dur: 1.2, from: 150, to: 1800, vol: 0.16 })
+      tone(a, { f: 80, to: 30, at: 1.45, dur: 1.2, vol: 0.65 })
+      click(a, 1.45, 0.3, 1500)
+      whoosh(a, { at: 1.45, dur: 0.8, from: 800, to: 9000, vol: 0.12 })
+      ;[0, 2, 4, 7, 9, 12].forEach((k, i) => chime(a, note(k), 1.9 + i * 0.09, 1.6, 0.15))
+      tone(a, { f: note(0) / 2, at: 1.9, dur: 2.2, vol: 0.14, type: 'triangle', attack: 0.05 })
+      tone(a, { f: note(7), at: 2.3, dur: 2.0, vol: 0.06, attack: 0.3 })
+      tone(a, { f: note(7) * 1.005, at: 2.3, dur: 2.0, vol: 0.05, attack: 0.3 })
+      break
+    }
+    case 'record': {
+      click(a, 0, 0.2, 2500)
+      tone(a, { f: 90, to: 45, dur: 0.4, vol: 0.4 })
+      ;[0, 2, 4, 7].forEach((k, i) => chime(a, note(k + 4), 0.05 + i * 0.07, 0.5, 0.17))
+      tone(a, { f: note(11), at: 0.35, dur: 0.8, vol: 0.06, attack: 0.04 })
+      break
+    }
     case 'complete': {
       // Low impact, then a rising arpeggio with a sustained shimmer.
       tone(a, { f: 70, to: 36, dur: 0.8, vol: 0.55 })

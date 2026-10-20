@@ -163,6 +163,36 @@ body {
 .seg { transition: background-color 300ms, box-shadow 300ms; }
 .screen-flash { position: fixed; inset: 0; z-index: 70; pointer-events: none; background: radial-gradient(circle at 50% 40%, rgba(191, 227, 255, .9), rgba(59, 130, 246, .3) 45%, transparent 75%); animation: flash 700ms ease-out both; }
 
+/* ---------- Cutscenes ---------- */
+.cs-bg { background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--tint) 28%, #020617) 0%, #01030c 62%); animation: cs-fade 400ms ease-out both; }
+.cs-flash { background: radial-gradient(circle at 50% 42%, #fff 0%, color-mix(in srgb, var(--tint) 70%, transparent) 30%, transparent 65%); animation: cs-flash 900ms ease-out 450ms both; pointer-events: none; }
+.cs-beam { background: linear-gradient(90deg, transparent, #fff, transparent); box-shadow: 0 0 24px 6px var(--tint); animation: cs-beam 700ms cubic-bezier(.2,.8,.2,1) 150ms both; }
+.cs-ring { animation: cs-ring-in 900ms cubic-bezier(.2,.8,.2,1) 300ms both, cs-spin 18s linear 300ms infinite; filter: drop-shadow(0 0 6px currentColor); }
+.cs-hero { animation: cs-hero 700ms cubic-bezier(.2,1.3,.4,1) 450ms both; }
+.cs-slam { animation: cs-slam 520ms cubic-bezier(.2,1.4,.4,1) 1000ms both; }
+.cs-sub { animation: cs-fade 500ms ease-out 1100ms both; }
+.cs-spark { position: absolute; left: 0; top: 0; border-radius: 99px; opacity: 0; animation: cs-spark 1100ms cubic-bezier(.1,.7,.3,1) 500ms both; }
+.cs-door { background: linear-gradient(90deg, #030a1f, #0b1d4a 85%, color-mix(in srgb, var(--tint) 60%, #fff)); z-index: 2; animation: cs-door-l 1200ms cubic-bezier(.7,0,.2,1) 900ms both; }
+.cs-door-r { background: linear-gradient(270deg, #030a1f, #0b1d4a 85%, color-mix(in srgb, var(--tint) 60%, #fff)); animation-name: cs-door-r; }
+.cs-door-l { box-shadow: 4px 0 30px var(--tint); }
+.cs-door-r { box-shadow: -4px 0 30px var(--tint); }
+.cs-rank-in { animation: cs-hero 900ms cubic-bezier(.2,1.2,.4,1) 1400ms both; }
+.cs-rank-in .cs-spark { animation-delay: 1500ms; }
+.cs-rays { border-radius: 50%; animation: cs-spin 30s linear infinite, cs-fade 800ms ease-out 1500ms both; mask: radial-gradient(circle, #000 20%, transparent 70%); }
+.cs-slam-late { animation: cs-slam 560ms cubic-bezier(.2,1.4,.4,1) 1900ms both; }
+.cs-sub-late { animation: cs-fade 500ms ease-out 2100ms both; }
+.cs-root .cs-flash { z-index: 1; }
+@keyframes cs-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cs-flash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes cs-beam { 0% { transform: scaleX(0); opacity: 1; } 60% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1) scaleY(40); opacity: 0; } }
+@keyframes cs-ring-in { from { opacity: 0; transform: scale(.3) rotate(-90deg); } to { opacity: 1; transform: none; } }
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+@keyframes cs-hero { from { opacity: 0; transform: scale(2.4); filter: blur(8px) brightness(3); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes cs-slam { from { opacity: 0; transform: scale(3); letter-spacing: .8em; } to { opacity: 1; transform: none; } }
+@keyframes cs-spark { 0% { opacity: 1; transform: translate(0, 0) scale(1.4); } 100% { opacity: 0; transform: translate(var(--x), var(--y)) scale(.4); } }
+@keyframes cs-door-l { 0% { transform: none; } 100% { transform: translateX(-102%); } }
+@keyframes cs-door-r { 0% { transform: none; } 100% { transform: translateX(102%); } }
+
 .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 .particles i { position: absolute; bottom: -10px; width: 2px; height: 2px; border-radius: 99px; background: #bfdbfe; box-shadow: 0 0 6px #60a5fa; animation: float-up linear infinite; }
 

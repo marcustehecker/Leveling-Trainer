@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest'
 import * as B from './balance'
 import { addDays } from './dates'
 import {
-  advanceTo, createGame, levelInfo, logWorkout, progressQuest, promotionStatus, questsFor, statLevel, toggleSickDay,
+  advanceTo, createGame, levelInfo, logBodyWeight, logWorkout, progressQuest, promotionStatus, questsFor, statLevel, toggleSickDay,
 } from './engine'
 import { generatePlan } from './plan'
+import { ACHIEVEMENTS } from './achievements'
 import type { Assessment, GameState, Profile, WorkoutInput } from './types'
 
 const MON = '2026-10-19'
@@ -235,5 +236,34 @@ describe('ranks', () => {
     s = advanceTo(s, addDays(MON, 7), at(addDays(MON, 7), 8))
     expect(s.activeWeeksAtRank).toBe(1)
     expect(s.streak).toBe(7)
+  })
+})
+
+describe('records, body weight and achievements', () => {
+  it('raises a record alert showing the old and new best', () => {
+    let s = log(start(), MON)
+    s = { ...s, ceremonies: [] }
+    const heavier = workout(3, { exercises: [{ exerciseId: 'goblet-squat', name: 'Goblet Squat', sets: [{ reps: 8, weightKg: 16, done: true }] }] })
+    s = log(s, WED, heavier)
+    const rec = s.ceremonies.find((c) => c.kind === 'record')
+    expect(rec).toBeTruthy()
+    if (rec?.kind === 'record') {
+      expect(rec.items[0].before.weightKg).toBe(12)
+      expect(rec.items[0].after.weightKg).toBe(16)
+    }
+  })
+  it('keeps one body weight entry per day and unlocks body weight achievements', () => {
+    let s = start()
+    for (let i = 0; i < 5; i++) s = logBodyWeight(s, 80 + i, addDays(MON, i), at(addDays(MON, i)))
+    s = logBodyWeight(s, 90.04, addDays(MON, 4), at(addDays(MON, 4)))
+    expect(s.bodyWeights).toHaveLength(5)
+    expect(s.bodyWeights!.at(-1)!.kg).toBe(90)
+    expect(s.achievements.body_5).toBeTruthy()
+  })
+  it('has unique achievement ids and no achievement unlocked on a fresh save', () => {
+    const ids = ACHIEVEMENTS.map((a) => a.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    const s = start()
+    expect(ACHIEVEMENTS.filter((a) => a.test(s)).map((a) => a.id)).toEqual([])
   })
 })

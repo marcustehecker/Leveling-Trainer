@@ -12,6 +12,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      // Adds the push and notification-click handlers for Daily Quest reminders.
+      workbox: { importScripts: ['push-sw.js'] },
       manifest: {
         name: 'THE SYSTEM',
         short_name: 'SYSTEM',

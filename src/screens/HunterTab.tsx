@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as B from '../core/balance'
 import { availableTitles, equipTitle, sickDaysUsed, toggleSickDay, updateProfile } from '../core/engine'
 import { WEEKDAY_SHORT } from '../core/dates'
@@ -9,6 +9,7 @@ import { exportBackup, nowIso, readBackup, todayKey } from '../store'
 import { cloudEnabled, deleteAccount, signOutAccount, type Account } from '../cloud'
 import { LegalSheet } from './Legal'
 import { setSoundOn, soundOn } from '../sfx'
+import { currentReminders, disableReminders, enableReminders, reminderSupport } from '../reminders'
 
 const EQUIP: { v: Equipment; label: string }[] = [
   { v: 'none', label: 'Bodyweight' }, { v: 'dumbbells', label: 'Dumbbells' }, { v: 'bands', label: 'Bands' },
@@ -124,6 +125,8 @@ export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; 
         </div>
       </Panel>
 
+      {cloudEnabled && account && <Reminders uid={account.uid} />}
+
       <Panel title="Settings">
         <button type="button" role="switch" aria-checked={sound} data-sfx="none" onClick={() => { setSoundOn(!sound); setSound(!sound) }}
           className="flex w-full items-center justify-between gap-3 text-left">
@@ -174,5 +177,59 @@ export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; 
       </Panel>
       {legal && <LegalSheet onClose={() => setLegal(false)} />}
     </div>
+  )
+}
+
+function Reminders({ uid }: { uid: string }) {
+  const support = reminderSupport()
+  const [on, setOn] = useState<boolean | null>(null)
+  const [morning, setMorning] = useState('08:00')
+  const [evening, setEvening] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  useEffect(() => {
+    if (support !== 'ok') return
+    let live = true
+    void currentReminders(uid).then((p) => {
+      if (!live) return
+      setOn(!!p)
+      if (p) { setMorning(p.morning); setEvening(p.evening) }
+    })
+    return () => { live = false }
+  }, [uid, support])
+
+  const run = async (fn: () => Promise<void>, ok: string) => {
+    setBusy(true); setMsg(null)
+    try { await fn(); setMsg(ok) } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+  }
+  const save = (next: { morning: string; evening: boolean }) => run(async () => { await enableReminders(uid, next); setOn(true) }, 'Reminders saved.')
+
+  return (
+    <Panel title="Reminders">
+      {support === 'not-installed' && <p className="text-sm text-mute">Reminders work when THE SYSTEM is opened from its Home Screen icon. In Safari tap Share → Add to Home Screen, then open it from the icon and come back here.</p>}
+      {support === 'unsupported' && <p className="text-sm text-mute">This browser can't receive notifications. On iPhone, update to iOS 16.4 or later and open the app from the Home Screen.</p>}
+      {support === 'ok' && (
+        <div className="grid gap-4">
+          <p className="text-sm text-mute">The System sends "[Daily Quest has arrived]" each morning, and a warning in the evening if a planned workout is still missing.</p>
+          <label className="flex items-center justify-between gap-3 text-sm">Morning reminder
+            <input type="time" value={morning} onChange={(e) => { setMorning(e.target.value); if (on && e.target.value) void save({ morning: e.target.value, evening }) }}
+              className="h-11 rounded border border-edge bg-panel-2 px-3 outline-none focus:border-sys" />
+          </label>
+          <button type="button" role="switch" aria-checked={evening} onClick={() => { setEvening(!evening); if (on) void save({ morning, evening: !evening }) }}
+            className="flex items-center justify-between gap-3 text-left text-sm">
+            <span>Evening warning at 8 PM<span className="block text-xs text-mute">Only on training days you haven't trained yet.</span></span>
+            <span className={`relative h-7 w-12 shrink-0 rounded-full border transition ${evening ? 'border-sky-200 bg-sys/40' : 'border-edge bg-panel-2'}`}>
+              <span className={`absolute top-0.5 h-5.5 w-5.5 rounded-full bg-white transition-all ${evening ? 'left-6' : 'left-0.5'}`} />
+            </span>
+          </button>
+          {on ? (
+            <Btn variant="ghost" disabled={busy} onClick={() => run(async () => { await disableReminders(uid); setOn(false) }, 'Reminders turned off.')}>Turn Off Reminders</Btn>
+          ) : (
+            <Btn disabled={busy || on === null} onClick={() => save({ morning, evening })}>{busy ? 'Setting up…' : 'Turn On Reminders'}</Btn>
+          )}
+          {msg && <p className="text-sm text-glow">{msg}</p>}
+        </div>
+      )}
+    </Panel>
   )
 }

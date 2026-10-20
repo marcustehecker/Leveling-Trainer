@@ -1,8 +1,25 @@
 import { ACHIEVEMENT_BY_ID } from '../core/achievements'
+import { EXERCISE_BY_ID } from '../core/exercises'
+import { useEffect } from 'react'
+import { play } from '../sfx'
+import { toDisplayWeight, weightUnit } from '../store'
+import { LevelUpCutscene, RankUpCutscene } from './Cutscene'
 import type { Ceremony } from '../core/types'
 import { Btn, Corners, NoticeHead, RANK_NAME, RankEmblem, SystemText } from './components'
 
-export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => void }) {
+export function CeremonyOverlay({ c, onClose, units }: { c: Ceremony; onClose: () => void; units: 'metric' | 'imperial' }) {
+  if (c.kind === 'levelUp') return <LevelUpCutscene key={`${c.from}-${c.to}`} from={c.from} to={c.to} onClose={onClose} />
+  if (c.kind === 'rankUp') return <RankUpCutscene key={c.rank} rank={c.rank} onClose={onClose} />
+  return <Notice c={c} onClose={onClose} units={units} />
+}
+
+function Notice({ c, onClose, units }: { c: Ceremony; onClose: () => void; units: 'metric' | 'imperial' }) {
+  useEffect(() => {
+    if (c.kind === 'record') play('record')
+    else if (c.kind === 'achievement') play(ACHIEVEMENT_BY_ID[c.id]?.rare ? 'complete' : 'reveal')
+    else if (c.kind === 'trialUnlocked') play('reveal')
+    else if (c.kind === 'penalty' || c.kind === 'warning' || c.kind === 'demotion' || c.kind === 'levelDown') play('deny')
+  }, [c])
   let tone: 'sys' | 'danger' | 'rare' = 'sys'
   let heading = ''
   let body = ''
@@ -55,6 +72,24 @@ export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => vo
       body = `[SYSTEM] ${c.title}. ${c.xp > 0 ? `+${c.xp} XP.` : ''}`
       visual = <div className="sys-title glow-text text-5xl text-white">✓</div>
       break
+    case 'record': {
+      const fmt = (r: { weightKg: number; reps: number; seconds: number }) =>
+        r.seconds ? `${r.seconds}s` : r.weightKg ? `${toDisplayWeight(r.weightKg, units)}${weightUnit(units)} × ${r.reps}` : `${r.reps} reps`
+      tone = 'rare'
+      heading = c.items.length > 1 ? `${c.items.length} New Records` : 'New Record'
+      body = `[SYSTEM] Limit broken. ${c.items.length > 1 ? 'Your strength is growing fast.' : 'Your strength is growing.'}`
+      visual = (
+        <div className="grid w-full gap-2 text-left text-sm">
+          {c.items.map((it) => (
+            <div key={it.exerciseId} className="anim-rise rounded border border-purple-300/40 bg-purple-500/10 px-3 py-2">
+              <div className="font-medium text-white">{EXERCISE_BY_ID[it.exerciseId]?.name ?? it.exerciseId}</div>
+              <div className="text-xs text-mute">{fmt(it.before)} <span className="text-rare">→</span> <span className="text-white">{fmt(it.after)}</span></div>
+            </div>
+          ))}
+        </div>
+      )
+      break
+    }
     case 'trialUnlocked':
       tone = 'rare'
       heading = 'Trial Unlocked'
@@ -63,7 +98,7 @@ export function CeremonyOverlay({ c, onClose }: { c: Ceremony; onClose: () => vo
       break
   }
 
-  const label = c.kind === 'penalty' ? 'Penalty' : c.kind === 'warning' || c.kind === 'demotion' ? 'Alert' : c.kind === 'rankUp' ? 'Rank Up' : 'Notification'
+  const label = c.kind === 'record' ? 'Record' : c.kind === 'penalty' ? 'Penalty' : c.kind === 'warning' || c.kind === 'demotion' ? 'Alert' : c.kind === 'rankUp' ? 'Rank Up' : 'Notification'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#01040f]/85 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={heading} onClick={onClose}>
       <div className={`sys-panel ${tone === 'sys' ? '' : tone} anim-open w-full max-w-sm px-6 pb-6 pt-5 text-center`} onClick={(e) => e.stopPropagation()}>

@@ -98,7 +98,7 @@ function Game({ account }: { account: Account | null }) {
         {tab === 'system' && <SystemTab s={state} update={update} goTraining={() => setTab('training')} />}
         {tab === 'training' && <TrainingTab s={state} update={update} onLogged={(m) => { setToast(`[Training recorded. ${m}]`); setTab('system') }} />}
         {tab === 'nutrition' && <NutritionTab s={state} />}
-        {tab === 'progress' && <ProgressTab s={state} />}
+        {tab === 'progress' && <ProgressTab s={state} update={update} />}
         {tab === 'hunter' && <HunterTab s={state} update={update} commit={commit} account={account} wipe={wipe} />}
       </main>
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-sky-200/30 bg-[#020617]/90 shadow-[0_-8px_24px_rgba(37,99,235,.18)] backdrop-blur" aria-label="Main">
@@ -119,7 +119,7 @@ function Game({ account }: { account: Account | null }) {
           <div className="sys-panel anim-open max-w-sm px-4 py-3 text-center text-sm text-white">{toast}</div>
         </div>
       )}
-      {ceremony && ceremony.kind !== 'questClear' && <CeremonyOverlay c={ceremony} onClose={() => update(dismissCeremony)} />}
+      {ceremony && ceremony.kind !== 'questClear' && <CeremonyOverlay c={ceremony} units={state.profile.units} onClose={() => update(dismissCeremony)} />}
     </div>
   )
 }

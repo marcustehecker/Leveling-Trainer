@@ -2,44 +2,20 @@
 // dates are passed in so the rules are deterministic and testable.
 import * as B from './balance'
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from './achievements'
+import { levelInfo, statLevel } from './levels'
 import { addDays, daysBetween, range, weekday, weekStart } from './dates'
 import { EXERCISE_BY_ID } from './exercises'
 import { isTrainingDay } from './plan'
 import { DAILY_TYPES, generateDailyQuests, penaltyQuest } from './quests'
 import type {
-  Assessment, Ceremony, DateKey, GameState, LogEntry, Profile, Quest, RankId, StatId, WorkoutInput, WorkoutLog,
+  Assessment, Ceremony, DateKey, GameState, LogEntry, PersonalRecord, Profile, Quest, RankId, StatId, WorkoutInput, WorkoutLog,
 } from './types'
 
 const clone = <T,>(x: T): T => structuredClone(x)
 
 // ---------- Levels and ranks ----------
 
-export interface LevelInfo {
-  level: number
-  band: RankId
-  /** XP into the current level. */
-  into: number
-  /** XP the current level spans. */
-  span: number
-  /** Total XP at which the next level starts. */
-  nextAt: number
-}
-
-export function levelInfo(xp: number): LevelInfo {
-  let bi = 0
-  for (let i = 0; i < B.RANKS.length; i++) if (xp >= B.RANK_XP[B.RANKS[i]]) bi = i
-  const band = B.RANKS[bi]
-  const per = B.XP_PER_LEVEL[band]
-  const offset = xp - B.RANK_XP[band]
-  let sub = Math.floor(offset / per)
-  if (band !== 'S') sub = Math.min(sub, B.LEVELS_PER_RANK - 1)
-  const into = offset - sub * per
-  return { level: bi * B.LEVELS_PER_RANK + sub + 1, band, into, span: per, nextAt: xp - into + per }
-}
-
-export function statLevel(statXp: number): number {
-  return Math.floor(Math.sqrt(statXp / 25)) + 1
-}
+export { levelInfo, statLevel, type LevelInfo } from './levels'
 
 export function statRank(level: number): RankId {
   if (level >= 70) return 'S'
@@ -289,6 +265,7 @@ function closeDay(s: GameState, d: DateKey, now: string) {
   checkDemotion(s, d, now)
   s.xpHistory.push({ date: d, xp: s.xp })
   if (s.xpHistory.length > 800) s.xpHistory.shift()
+  s.statHistory = [...(s.statHistory ?? []), { date: d, stats: { ...s.stats } }].slice(-400)
   checkAchievements(s, d, now)
 }
 
@@ -445,6 +422,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
   // Personal records
   const prs: string[] = []
+  const recordItems: { exerciseId: string; before: PersonalRecord; after: PersonalRecord }[] = []
   for (const e of input.exercises) {
     const ex = EXERCISE_BY_ID[e.exerciseId]
     const sets = e.sets.filter((x) => x.done)
@@ -452,14 +430,14 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
     const rec = s.records[e.exerciseId]
     if (ex.kind === 'time') {
       const best = Math.max(...sets.map((x) => x.seconds ?? 0))
-      if (rec && best > rec.seconds) prs.push(ex.name)
+      if (rec && best > rec.seconds) { prs.push(ex.name); recordItems.push({ exerciseId: ex.id, before: rec, after: { reps: 0, weightKg: 0, seconds: best, date: today } }) }
       if (!rec || best > rec.seconds) s.records[e.exerciseId] = { reps: 0, weightKg: 0, seconds: best, date: today }
     } else {
       const best = [...sets].sort((a, b) => (b.weightKg ?? 0) - (a.weightKg ?? 0) || (b.reps ?? 0) - (a.reps ?? 0))[0]
       const w = best.weightKg ?? 0
       const r = best.reps ?? 0
       const better = rec ? w > rec.weightKg || (w === rec.weightKg && r > rec.reps) : true
-      if (rec && better && r > 0) prs.push(ex.name)
+      if (rec && better && r > 0) { prs.push(ex.name); recordItems.push({ exerciseId: ex.id, before: rec, after: { reps: r, weightKg: w, seconds: 0, date: today } }) }
       if (better && r > 0) s.records[e.exerciseId] = { reps: r, weightKg: w, seconds: 0, date: today }
     }
   }
@@ -470,6 +448,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   const raw = Math.round((base + bonus + prXp) * mult)
   const xp = raw > 0 ? gainXp(s, today, now, raw, prior > 0 ? `Workout (repeat ×${mult})` : 'Workout logged') : 0
   s.prCount += prs.length
+  if (recordItems.length) ceremony(s, { kind: 'record', items: recordItems })
 
   // Stats
   for (const { e, x } of done) {
@@ -529,6 +508,17 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
   checkAchievements(s, today, now)
   return { state: s, result: { ok: true, xp, prs, completed } }
+}
+
+/** Record today's body weight (kg), replacing an earlier entry from the same day. */
+export function logBodyWeight(s0: GameState, kg: number, today: DateKey, now: string): GameState {
+  const s = clone(s0)
+  const list = (s.bodyWeights ?? []).filter((b) => b.date !== today)
+  list.push({ date: today, kg: Math.round(kg * 10) / 10 })
+  list.sort((a, b) => a.date.localeCompare(b.date))
+  s.bodyWeights = list.slice(-730)
+  checkAchievements(s, today, now)
+  return s
 }
 
 export function sickDaysUsed(s: GameState, today: DateKey): number {

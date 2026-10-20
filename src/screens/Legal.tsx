@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Btn, Corners } from '../ui/components'
 import type { Sfx } from '../sfx'
 
-const UPDATED = 'October 19, 2026'
+const UPDATED = 'October 20, 2026'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -33,11 +33,12 @@ export function LegalText() {
       <Section title="What we store">
         <p>When you sign in with Google, the System receives your Google account ID, name, email address and profile picture so it can identify your save. It never sees your Google password.</p>
         <p>Your save contains game progress and what you entered at registration: hunter name, age range, optional height and weight, experience, goals, equipment, schedule, assessment results, diet notes, workouts and quest history.</p>
+        <p>If you turn on reminders, the System also stores your phone's notification address, your time zone and your reminder times, so it can send them. Turning reminders off deletes these.</p>
         <p>There are no ads, no tracking or analytics, no location data and no access to your contacts, photos or email. Your data is never sold or shared.</p>
       </Section>
 
       <Section title="Where it is kept">
-        <p>A copy is kept on your device and, when signed in, in Google Firebase (Cloud Firestore). Database rules allow only your signed-in account to read or change your save.</p>
+        <p>A copy is kept on your device and, when signed in, in Google Firebase (Cloud Firestore). Database rules allow only your signed-in account to read or change your save. Reminders are sent by a scheduled job the app's maker runs, which reads your reminder settings and whether you trained today.</p>
       </Section>
 
       <Section title="Deleting your data">
