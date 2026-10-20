@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RANK_XP } from '../core/balance'
-import { demotionDaysLeft, levelInfo, powerRating, progressQuest, promotionStatus, questsFor, STAT_IDS, statLevel, statRank } from '../core/engine'
+import { currentRaid, demotionDaysLeft, levelInfo, powerRating, progressQuest, promotionStatus, questsFor, STAT_IDS, statLevel, statRank } from '../core/engine'
+import { BOSS_BY_ID, RAID } from '../core/raids'
 import type { GameState, Quest } from '../core/types'
 import { Bar, Btn, Panel, RANK_COLOR, RANK_NAME, RankEmblem, Tag } from '../ui/components'
 import { nowIso, todayKey } from '../store'
@@ -103,6 +104,8 @@ export function SystemTab({ s, update, goTraining }: { s: GameState; update: (fn
           WARNING: Failure to complete planned training will result in an appropriate penalty.
         </p>
       </Panel>
+
+      <RaidPanel s={s} today={today} goTraining={goTraining} />
 
       {weekly && (
         <Panel title="Weekly Quest">
@@ -229,5 +232,56 @@ function QuestRow({ q, onProgress, goTraining }: { q: Quest; onProgress: (n: num
         </div>
       )}
     </li>
+  )
+}
+
+function RaidPanel({ s, today, goTraining }: { s: GameState; today: string; goTraining: () => void }) {
+  const raid = currentRaid(s, today)
+  const boss = raid && BOSS_BY_ID[raid.bossId]
+  if (!raid || !boss) return null
+  const hp = Math.max(0, raid.target - raid.progress)
+  const cap = Math.ceil(raid.target * RAID.DAILY_SHARE)
+  const todayDmg = raid.byDay[today] ?? 0
+  const wd = new Date(`${today}T12:00:00`).getDay()
+  const daysLeft = wd === 0 ? 1 : 8 - wd
+  const readyAt = raid.lastCountedAt ? Date.parse(raid.lastCountedAt) + RAID.COOLDOWN_HOURS * 3_600_000 : 0
+  const waitMin = Math.max(0, Math.ceil((readyAt - Date.now()) / 60_000))
+  const cleared = raid.status === 'cleared'
+  return (
+    <Panel title="Dungeon Raid" tone={cleared ? 'rare' : 'danger'} open>
+      <div className="text-center">
+        <div className="sys-title glow-text text-xl text-white">{boss.name}</div>
+        <p className="mt-1 text-xs leading-relaxed text-mute">{boss.lore}</p>
+      </div>
+      <div className="mt-4">
+        <div className="mb-1 flex justify-between text-xs"><span className="sys-title text-danger">Boss HP</span><span className="text-sky-100">{hp.toLocaleString()} / {raid.target.toLocaleString()} {boss.unit}</span></div>
+        <div className="h-3 overflow-hidden rounded-sm border border-red-400/40 bg-red-950/40">
+          <div className="h-full bg-gradient-to-r from-red-700 via-red-500 to-orange-300 transition-all duration-700" style={{ width: `${(hp / raid.target) * 100}%` }} />
+        </div>
+      </div>
+      {cleared ? (
+        <p className="mt-4 text-center text-sm text-rare">[Dungeon cleared. +{raid.xp} XP earned. A new gate opens on Monday.]</p>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-3 text-center">
+            <Metric label="Today" value={`${todayDmg}/${cap}`} />
+            <Metric label="Next hit" value={todayDmg >= cap ? 'Tomorrow' : waitMin > 0 ? (waitMin >= 60 ? `${Math.ceil(waitMin / 60)} h` : `${waitMin} min`) : 'Ready'} />
+            <Metric label="Gate closes" value={`${daysLeft} day${daysLeft === 1 ? '' : 's'}`} />
+          </div>
+          <details className="mt-3 text-xs text-mute">
+            <summary className="cursor-pointer text-glow">Raid rules</summary>
+            <ul className="mt-2 grid list-disc gap-1 pl-5">
+              <li>Only sets you tick off in a logged workout deal damage.</li>
+              <li>Workouts under {RAID.MIN_MINUTES} minutes don't count.</li>
+              <li>The boss recovers for {RAID.COOLDOWN_HOURS} hours after each hit.</li>
+              <li>At most {cap} {boss.unit} per day, so it takes at least 3 days.</li>
+              <li>Damage is limited by how long you trained.</li>
+              <li>Reward: +{raid.xp} XP. If the gate closes first, you lose nothing.</li>
+            </ul>
+          </details>
+          <Btn className="mt-4 w-full" variant="danger" onClick={goTraining}>Enter Dungeon (Train)</Btn>
+        </>
+      )}
+    </Panel>
   )
 }

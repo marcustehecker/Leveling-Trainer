@@ -1,5 +1,6 @@
 import { ACHIEVEMENT_BY_ID } from '../core/achievements'
 import { EXERCISE_BY_ID } from '../core/exercises'
+import { BOSS_BY_ID, RAID } from '../core/raids'
 import { useEffect } from 'react'
 import { play } from '../sfx'
 import { toDisplayWeight, weightUnit } from '../store'
@@ -17,7 +18,8 @@ function Notice({ c, onClose, units }: { c: Ceremony; onClose: () => void; units
   useEffect(() => {
     if (c.kind === 'record') play('record')
     else if (c.kind === 'achievement') play(ACHIEVEMENT_BY_ID[c.id]?.rare ? 'complete' : 'reveal')
-    else if (c.kind === 'trialUnlocked') play('reveal')
+    else if (c.kind === 'trialUnlocked' || c.kind === 'raidOpen') play('reveal')
+    else if (c.kind === 'raidCleared') play('complete')
     else if (c.kind === 'penalty' || c.kind === 'warning' || c.kind === 'demotion' || c.kind === 'levelDown') play('deny')
   }, [c])
   let tone: 'sys' | 'danger' | 'rare' = 'sys'
@@ -90,6 +92,22 @@ function Notice({ c, onClose, units }: { c: Ceremony; onClose: () => void; units
       )
       break
     }
+    case 'raidOpen': {
+      const b = BOSS_BY_ID[c.bossId]
+      tone = 'danger'
+      heading = 'Dungeon Gate Opened'
+      body = `[SYSTEM] ${b?.lore ?? ''} Deal ${c.target} ${b?.unit ?? ''} of damage by Sunday. Only sets you log in real workouts count, and the boss recovers ${RAID.COOLDOWN_HOURS} hours between hits.`
+      visual = <div className="sys-title glow-text text-2xl text-white">{b?.name ?? 'Unknown Boss'}</div>
+      break
+    }
+    case 'raidCleared': {
+      const b = BOSS_BY_ID[c.bossId]
+      tone = 'rare'
+      heading = 'Dungeon Cleared'
+      body = `[SYSTEM] ${b?.name ?? 'The boss'} has been defeated. +${c.xp} XP. Your strength and discipline grow.`
+      visual = <div className="sys-title glow-text text-5xl text-white">+{c.xp} XP</div>
+      break
+    }
     case 'trialUnlocked':
       tone = 'rare'
       heading = 'Trial Unlocked'
@@ -98,7 +116,7 @@ function Notice({ c, onClose, units }: { c: Ceremony; onClose: () => void; units
       break
   }
 
-  const label = c.kind === 'record' ? 'Record' : c.kind === 'penalty' ? 'Penalty' : c.kind === 'warning' || c.kind === 'demotion' ? 'Alert' : c.kind === 'rankUp' ? 'Rank Up' : 'Notification'
+  const label = c.kind === 'record' ? 'Record' : c.kind === 'penalty' ? 'Penalty' : c.kind === 'warning' || c.kind === 'demotion' ? 'Alert' : c.kind === 'rankUp' ? 'Rank Up' : c.kind === 'raidOpen' || c.kind === 'raidCleared' ? 'Dungeon' : 'Notification'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#01040f]/85 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={heading} onClick={onClose}>
       <div className={`sys-panel ${tone === 'sys' ? '' : tone} anim-open w-full max-w-sm px-6 pb-6 pt-5 text-center`} onClick={(e) => e.stopPropagation()}>

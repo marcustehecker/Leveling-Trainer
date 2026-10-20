@@ -70,7 +70,9 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
       if (!result.ok) return result.reason
       update(() => state)
       setDraft(null)
-      onLogged(`+${result.xp} XP${result.prs.length ? ` · New record: ${result.prs.join(', ')}` : ''}`)
+      const r = result.raid
+      const raidMsg = !r ? '' : r.cleared ? ` · Raid cleared: ${r.boss} defeated!` : r.damage > 0 ? ` · Raid: ${r.damage} damage to ${r.boss} (${r.left} left)` : ` · ${r.blocked}`
+      onLogged(`+${result.xp} XP${result.prs.length ? ` · New record: ${result.prs.join(', ')}` : ''}${raidMsg}`)
       return null
     }} />
   }

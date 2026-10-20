@@ -3,6 +3,7 @@
 import * as B from './balance'
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from './achievements'
 import { levelInfo, statLevel } from './levels'
+import { applyWorkout, BOSS_BY_ID, createRaid, type RaidHit } from './raids'
 import { addDays, daysBetween, range, weekday, weekStart } from './dates'
 import { EXERCISE_BY_ID } from './exercises'
 import { isTrainingDay } from './plan'
@@ -312,7 +313,7 @@ export function createGame(profile: Profile, assessment: Assessment, today: Date
 
 /** Close every day before `today` that hasn't been closed, then issue today's quests. */
 export function advanceTo(s0: GameState, today: DateKey, now: string): GameState {
-  if (s0.lastClosedDate >= addDays(today, -1) && s0.questsGeneratedFor.includes(today)) return s0
+  if (s0.lastClosedDate >= addDays(today, -1) && s0.questsGeneratedFor.includes(today) && s0.raids?.some((r) => r.week === weekStart(today))) return s0
   const s = clone(s0)
   for (let d = addDays(s.lastClosedDate, 1); d < today; d = addDays(d, 1)) {
     closeDay(s, d, now)
@@ -320,7 +321,31 @@ export function advanceTo(s0: GameState, today: DateKey, now: string): GameState
   }
   generateFor(s, today)
   checkTrial(s, today, now)
+  openRaid(s, today, now)
   return s
+}
+
+/** Expire last week's raid and open this week's. Raids never cost XP. */
+function openRaid(s: GameState, today: DateKey, now: string) {
+  const week = weekStart(today)
+  const raids = (s.raids ??= [])
+  for (const r of raids) {
+    if (r.status === 'active' && r.week < week) {
+      r.status = 'failed'
+      log(s, today, now, `[SYSTEM] The ${BOSS_BY_ID[r.bossId]?.name ?? 'raid'} gate closed. Raid failed. No XP lost.`, 'info')
+    }
+  }
+  if (raids.some((r) => r.week === week)) return
+  const daysLeft = 7 - daysBetween(week, today)
+  const r = createRaid(week, s.profile, s.rank, daysLeft, raids[raids.length - 1]?.bossId)
+  raids.push(r)
+  if (raids.length > 60) raids.splice(0, raids.length - 60)
+  ceremony(s, { kind: 'raidOpen', bossId: r.bossId, target: r.target })
+  log(s, today, now, `[SYSTEM] A Dungeon Gate has opened: ${BOSS_BY_ID[r.bossId].name}. Clear it by Sunday.`, 'rare')
+}
+
+export function currentRaid(s: GameState, today: DateKey) {
+  return s.raids?.find((r) => r.week === weekStart(today)) ?? null
 }
 
 export function questsFor(s: GameState, today: DateKey): Quest[] {
@@ -393,7 +418,7 @@ export function progressQuest(s0: GameState, questId: string, amount: number, to
 }
 
 export type LogResult =
-  | { ok: true; xp: number; prs: string[]; completed: string[] }
+  | { ok: true; xp: number; prs: string[]; completed: string[]; raid?: RaidHit & { boss: string; unit: string; left: number } }
   | { ok: false; reason: string }
 
 function signature(w: WorkoutInput) {
@@ -506,8 +531,26 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
     }
   }
 
+  // Dungeon Raid damage (only from what was actually logged, within the raid limits).
+  openRaid(s, today, now)
+  const raid = currentRaid(s, today)
+  let raidHit: (RaidHit & { boss: string; unit: string; left: number }) | undefined
+  if (raid && raid.status === 'active') {
+    const boss = BOSS_BY_ID[raid.bossId]
+    const hit = applyWorkout(raid, input, today, now)
+    if (hit.damage > 0 || hit.blocked) raidHit = { ...hit, boss: boss.name, unit: boss.unit, left: Math.max(0, raid.target - raid.progress) }
+    if (hit.damage > 0) log(s, today, now, `[SYSTEM] Raid: ${hit.damage} damage to ${boss.name} (${raid.progress}/${raid.target}).`, 'gain')
+    if (hit.cleared) {
+      const got = gainXp(s, today, now, raid.xp, `Raid cleared: ${boss.name}`, true)
+      addStat(s, 'discipline', 40)
+      addStat(s, boss.metric === 'minutes' ? 'endurance' : 'strength', 60)
+      ceremony(s, { kind: 'raidCleared', bossId: raid.bossId, xp: got })
+      log(s, today, now, `[SYSTEM] Raid cleared: ${boss.name} defeated. +${got} XP.`, 'rare')
+    }
+  }
+
   checkAchievements(s, today, now)
-  return { state: s, result: { ok: true, xp, prs, completed } }
+  return { state: s, result: { ok: true, xp, prs, completed, raid: raidHit } }
 }
 
 /** Record today's body weight (kg), replacing an earlier entry from the same day. */

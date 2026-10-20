@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../core/achievements'
 import { EXERCISE_BY_ID } from '../core/exercises'
-import { addDays, weekStart } from '../core/dates'
+import { addDays, range, weekStart } from '../core/dates'
+import { isTrainingDay } from '../core/plan'
 import { logBodyWeight, statLevel } from '../core/engine'
 import type { GameState, StatId } from '../core/types'
 import { Btn, Panel, RANK_COLOR, RankEmblem, Tag } from '../ui/components'
@@ -207,6 +208,84 @@ function XpChart({ s }: { s: GameState }) {
   )
 }
 
+
+const HEAT_WEEKS = 18
+type DayKind = 'trained' | 'missed' | 'sick' | 'rest' | 'none'
+
+/** Training calendar: one column per week, Monday at the top. */
+function Heatmap({ s }: { s: GameState }) {
+  const today = todayKey()
+  const [sel, setSel] = useState<string | null>(null)
+  const start = addDays(weekStart(today), -7 * (HEAT_WEEKS - 1))
+  const byDate = useMemo(() => {
+    const m: Record<string, { n: number; sets: number; min: number; titles: string[] }> = {}
+    for (const w of s.workouts) {
+      const d = (m[w.date] ??= { n: 0, sets: 0, min: 0, titles: [] })
+      d.n++; d.min += w.durationMin; d.titles.push(w.title)
+      d.sets += w.exercises.reduce((a, e) => a + e.sets.filter((x) => x.done).length, 0)
+    }
+    return m
+  }, [s.workouts])
+  const kind = (d: string): DayKind => {
+    if (byDate[d]) return 'trained'
+    if (d > today || d < s.createdDate) return 'none'
+    if (s.sickDays.includes(d)) return 'sick'
+    if (d < today && isTrainingDay(s.profile, d)) return 'missed'
+    return 'rest'
+  }
+  const color = (d: string) => {
+    const k = kind(d)
+    if (k === 'trained') { const sets = byDate[d].sets; return sets >= 20 ? '#a7f3d0' : sets >= 12 ? '#34d399' : sets >= 6 ? '#059669' : '#065f46' }
+    return { missed: '#7f1d1d', sick: '#b45309', rest: '#13233f', none: 'transparent' }[k]
+  }
+  const days = range(start, addDays(weekStart(today), 6))
+  const weeks = Array.from({ length: HEAT_WEEKS }, (_, i) => days.slice(i * 7, i * 7 + 7))
+  const trainedDays = days.filter((d) => kind(d) === 'trained').length
+  const missedDays = days.filter((d) => kind(d) === 'missed').length
+  const info = sel && byDate[sel]
+  const label = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  return (
+    <div>
+      <div className="flex gap-[3px]">
+        <div className="mr-1 grid grid-rows-7 gap-[3px] text-[9px] leading-none text-mute">
+          {['M', '', 'W', '', 'F', '', 'S'].map((l, i) => <span key={i} className="flex aspect-square items-center">{l}</span>)}
+        </div>
+        {weeks.map((wk) => (
+          <div key={wk[0]} className="grid flex-1 grid-rows-7 gap-[3px]">
+            {wk.map((d) => (
+              <button
+                key={d}
+                type="button"
+                data-sfx="select"
+                aria-label={`${label(d)}: ${kind(d)}`}
+                disabled={kind(d) === 'none' && d !== today}
+                onClick={() => setSel(sel === d ? null : d)}
+                className={`aspect-square rounded-[2px] ${d === today ? 'ring-1 ring-sky-200' : ''} ${sel === d ? 'ring-2 ring-white' : ''} ${kind(d) === 'none' ? 'border border-sky-900/30' : ''}`}
+                style={{ background: color(d) }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-mute">
+        <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#059669]" />Trained</span>
+        <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#7f1d1d]" />Missed</span>
+        <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#b45309]" />Sick</span>
+        <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#13233f]" />Rest</span>
+        <span className="ml-auto">{trainedDays} trained · {missedDays} missed</span>
+      </div>
+      {sel && (
+        <div className="anim-rise mt-3 rounded border border-sky-300/30 bg-sky-500/5 px-3 py-2 text-sm">
+          <div className="font-medium text-white">{label(sel)}</div>
+          <div className="text-xs text-mute">
+            {info ? `${info.titles.join(', ')} · ${info.sets} set${info.sets === 1 ? "" : "s"} · ${info.min} min` : { missed: 'Planned training day, no workout logged.', sick: 'Sick or injured. No XP lost.', rest: 'Rest day.', none: 'Nothing yet.', trained: '' }[kind(sel)]}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ProgressTab({ s, update }: { s: GameState; update: (fn: (s: GameState) => GameState) => void }) {
   const units = s.profile.units
   const records = Object.entries(s.records).filter(([id]) => EXERCISE_BY_ID[id])
@@ -217,6 +296,7 @@ export function ProgressTab({ s, update }: { s: GameState; update: (fn: (s: Game
         <p className="mt-2 text-xs text-mute">Red dots mark days XP was lost.</p>
       </Panel>
 
+      <Panel title="Training Calendar"><Heatmap s={s} /></Panel>
       <Panel title="Strength"><StrengthChart s={s} /></Panel>
       <Panel title="Training Volume"><WeeklyChart s={s} /></Panel>
       <Panel title="Stats"><StatChart s={s} /></Panel>

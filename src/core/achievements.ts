@@ -32,6 +32,7 @@ const bestWeight = (s: GameState, ids: string[]) => Math.max(0, ...ids.map((id) 
 const bestSeconds = (s: GameState, ids: string[]) => Math.max(0, ...ids.map((id) => s.records[id]?.seconds ?? 0))
 const hourOf = (iso: string) => new Date(iso).getHours()
 const isWeekend = (date: string) => { const d = new Date(`${date}T12:00:00`).getDay(); return d === 0 || d === 6 }
+const raidsCleared = (s: GameState) => (s.raids ?? []).filter((r) => r.status === 'cleared').length
 const level = (s: GameState) => levelInfo(s.xp).level
 const statLv = (s: GameState, id: StatId) => statLevel(s.stats[id])
 const STATS: StatId[] = ['strength', 'endurance', 'agility', 'vitality', 'discipline', 'recovery']
@@ -74,6 +75,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     { id: 'early_riser', name: 'Early Riser', description: 'Log a workout before 7 AM.', title: 'Early Riser', test: (s) => s.workouts.some((w) => hourOf(w.loggedAt) < 7) },
     { id: 'night_hunter', name: 'Night Hunter', description: 'Log a workout after 9 PM.', title: 'Night Hunter', test: (s) => s.workouts.some((w) => hourOf(w.loggedAt) >= 21) },
     { id: 'weekend_10', name: 'Weekend Warrior', description: 'Log 10 workouts on weekends.', title: 'Weekend Warrior', test: (s) => s.workouts.filter((w) => isWeekend(w.date)).length >= 10 },
+    { id: 'raid_1', name: 'Gate Breaker', description: 'Clear your first Dungeon Raid.', test: (s) => raidsCleared(s) >= 1 },
+    { id: 'raid_5', name: 'Raider', description: 'Clear 5 Dungeon Raids.', title: 'Raider', test: (s) => raidsCleared(s) >= 5 },
+    { id: 'raid_10', name: 'Dungeon Breaker', description: 'Clear 10 Dungeon Raids.', rare: true, title: 'Dungeon Breaker', test: (s) => raidsCleared(s) >= 10 },
+    { id: 'raid_all', name: 'Monster Hunter', description: 'Defeat every kind of raid boss.', rare: true, title: 'Monster Hunter', test: (s) => new Set((s.raids ?? []).filter((r) => r.status === 'cleared').map((r) => r.bossId)).size >= 6 },
     { id: 'cardio_300', name: 'Endurance Runner', description: 'Do 300 minutes of cardio.', test: (s) => cardioMinutes(s) >= 300 },
     { id: 'cardio_1000', name: 'Marathon Soul', description: 'Do 1,000 minutes of cardio.', rare: true, title: 'Marathon Soul', test: (s) => cardioMinutes(s) >= 1000 },
   ]),

@@ -137,6 +137,8 @@ export type Ceremony =
   | { kind: 'achievement'; id: string }
   | { kind: 'questClear'; title: string; xp: number }
   | { kind: 'trialUnlocked'; rank: RankId }
+  | { kind: 'raidOpen'; bossId: string; target: number }
+  | { kind: 'raidCleared'; bossId: string; xp: number }
   | { kind: 'record'; items: { exerciseId: string; before: PersonalRecord; after: PersonalRecord }[] }
 
 export interface LogEntry {
@@ -181,6 +183,8 @@ export interface GameState {
   log: LogEntry[]
   ceremonies: Ceremony[]
   seq: number
+  /** Weekly Dungeon Raids, newest last. */
+  raids?: import('./raids').Raid[]
   /** Body weight entries in kg, oldest first. */
   bodyWeights?: { date: DateKey; kg: number }[]
   /** Daily snapshot of stat XP, for progress charts. */
