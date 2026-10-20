@@ -7,7 +7,7 @@ import { applyWorkout, BOSS_BY_ID, createRaid, type RaidHit } from './raids'
 import { addDays, daysBetween, range, weekday, weekStart } from './dates'
 import { EXERCISE_BY_ID } from './exercises'
 import { isTrainingDay } from './plan'
-import { DAILY_TYPES, generateDailyQuests, penaltyQuest } from './quests'
+import { DAILY_TYPES, generateDailyQuests, penaltyQuest, waterAmount, waterGlasses } from './quests'
 import type {
   Assessment, Ceremony, DateKey, GameState, LogEntry, PersonalRecord, Profile, Quest, RankId, StatId, WorkoutInput, WorkoutLog,
 } from './types'
@@ -305,6 +305,7 @@ export function createGame(profile: Profile, assessment: Assessment, today: Date
     },
     prCount: 0, sickDays: [], missStreak: 0, inactiveStreak: 0, streak: 0, bestStreak: 0,
     penalties: [], achievements: {}, equippedTitle: null, log: [], ceremonies: [], seq: 0,
+    bodyWeights: profile.weightKg ? [{ date: today, kg: Math.round(profile.weightKg * 10) / 10 }] : [],
   }
   log(s, today, now, `[SYSTEM] Player registration complete. Welcome, ${profile.name}. Rank assigned: E.`, 'rare')
   generateFor(s, today)
@@ -554,12 +555,28 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 }
 
 /** Record today's body weight (kg), replacing an earlier entry from the same day. */
+/** Body weight can be updated once every 7 days. Returns the first day it can change again, or null. */
+export function weightLockedUntil(s: GameState, today: DateKey): DateKey | null {
+  const last = s.bodyWeights?.[s.bodyWeights.length - 1]
+  if (!last) return null
+  const next = addDays(last.date, B.WEIGHT_UPDATE_DAYS)
+  return next > today ? next : null
+}
+
 export function logBodyWeight(s0: GameState, kg: number, today: DateKey, now: string): GameState {
+  if (weightLockedUntil(s0, today)) return s0
   const s = clone(s0)
-  const list = (s.bodyWeights ?? []).filter((b) => b.date !== today)
-  list.push({ date: today, kg: Math.round(kg * 10) / 10 })
-  list.sort((a, b) => a.date.localeCompare(b.date))
+  const w = Math.round(kg * 10) / 10
+  const list = [...(s.bodyWeights ?? []), { date: today, kg: w }]
   s.bodyWeights = list.slice(-730)
+  s.profile = { ...s.profile, weightKg: w }
+  // Today's water goal follows the new weight.
+  const water = s.quests.find((q) => q.date === today && q.title === 'Hydration' && q.status === 'active')
+  if (water) {
+    const training = isTrainingDay(s.profile, today)
+    water.target = waterGlasses(w, training)
+    water.objective = `Drink ${water.target} glasses of water (${waterAmount(water.target, s.profile.units)})`
+  }
   checkAchievements(s, today, now)
   return s
 }

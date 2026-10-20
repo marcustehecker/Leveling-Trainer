@@ -82,12 +82,13 @@ export function LevelUpCutscene({ from, to, onClose }: { from: number; to: numbe
       <div className="relative flex h-72 w-72 items-center justify-center">
         <Ring color="#93c5fd" size={288} />
         <Burst color="#bfdbfe" />
-        <div className="cs-hero relative text-center">
-          <div className="sys-title glow-text text-sm tracking-[.5em] text-sky-200">Level</div>
-          <div className="sys-title glow-text text-8xl leading-none text-white tabular-nums">{n}</div>
+        <div className="cs-hero absolute inset-0 flex items-center justify-center">
+          {/* Letter spacing adds space after the last glyph, so it is cancelled to keep the number dead center. */}
+          <div className="sys-title glow-text text-8xl leading-none text-white tabular-nums" style={{ letterSpacing: 0 }}>{n}</div>
+          <div className="sys-title glow-text absolute left-0 right-0 top-[calc(50%-5.25rem)] text-center text-sm text-sky-200" style={{ letterSpacing: '.5em', paddingLeft: '.5em' }}>Level</div>
         </div>
       </div>
-      <div className="cs-slam sys-title glow-text mt-2 text-4xl tracking-[.25em] text-white">Level Up!</div>
+      <div className="cs-slam sys-title glow-text mt-2 text-4xl text-white" style={{ letterSpacing: '.25em', paddingLeft: '.25em' }}>Level Up!</div>
       <div className="cs-sub mt-4 max-w-xs px-6 text-center text-sm text-sky-100/90">
         {text && <SystemText text={`[You have leveled up. Level ${from} → ${to}.]`} speed={22} />}
       </div>

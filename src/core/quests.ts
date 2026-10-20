@@ -98,12 +98,13 @@ export function generateDailyQuests(s: GameState, d: DateKey): Quest[] {
     }))
   }
 
+  const glasses = waterGlasses(p.weightKg, !!training)
   out.push(base(d, 'water', {
     type: 'habit', measure: 'count',
     title: 'Hydration',
-    description: 'Drink water regularly through the day. Tap once per glass.',
-    objective: 'Drink 6 glasses of water',
-    difficulty: 'E', minutes: 0, stat: 'vitality', xp: QUEST_XP.E, target: 6, unit: 'glasses',
+    description: `Drink water regularly through the day. Tap once per glass (250 ml / 8 oz).${p.weightKg ? ' Goal set from your body weight' + (training ? ', plus extra for training.' : '.') : ''}`,
+    objective: `Drink ${glasses} glasses of water (${waterAmount(glasses, p.units)})`,
+    difficulty: 'E', minutes: 0, stat: 'vitality', xp: QUEST_XP.E, target: glasses, unit: 'glasses',
   }))
 
   if (p.bedtime) {
@@ -149,3 +150,13 @@ export function penaltyQuest(d: DateKey, penaltyId: string, lost: number): Quest
 
 export const DAILY_TYPES: Quest['type'][] = ['main', 'side', 'habit', 'recovery', 'sleep']
 
+
+/** Daily water goal in 250 ml glasses: about 35 ml per kg of body weight, plus 2 on training days. */
+export function waterGlasses(weightKg: number | undefined, training: boolean): number {
+  const base = weightKg ? Math.min(14, Math.max(6, Math.round((weightKg * 35) / 250))) : 8
+  return base + (training ? 2 : 0)
+}
+
+export function waterAmount(glasses: number, units: 'metric' | 'imperial'): string {
+  return units === 'imperial' ? `about ${glasses * 8} oz` : `about ${(glasses * 0.25).toFixed(glasses % 2 ? 2 : 1).replace(/0$/, '')} L`
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays } from './dates'
-import { advanceTo, createGame, currentRaid, logWorkout } from './engine'
+import { advanceTo, createGame, currentRaid, logBodyWeight, logWorkout, weightLockedUntil } from './engine'
+import { waterGlasses } from './quests'
 import { applyWorkout, BOSS_BY_ID, createRaid, RAID, type Raid } from './raids'
 import type { Profile, WorkoutInput } from './types'
 
@@ -83,5 +84,28 @@ describe('dungeon raids', () => {
     expect(currentRaid(t, next)!.status).toBe('active')
     const unfinished = advanceTo(t, addDays(next, 7), at(addDays(next, 7), 8))
     expect(unfinished.raids!.find((x) => x.week === next)!.status).toBe('failed')
+  })
+})
+
+describe('body weight and water', () => {
+  it('sets the water goal from body weight, with extra on training days', () => {
+    expect(waterGlasses(undefined, false)).toBe(8)
+    expect(waterGlasses(80, false)).toBe(11)
+    expect(waterGlasses(80, true)).toBe(13)
+    expect(waterGlasses(40, false)).toBe(6)
+    expect(waterGlasses(200, false)).toBe(14)
+  })
+
+  it('allows one weight update a week and updates today\'s water quest', () => {
+    let s = createGame({ ...profile, weightKg: 80 }, { pushups: 20, plankSeconds: 40, cardioLevel: 3, mobilityLevel: 2 }, MON, at(MON, 8))
+    const water = () => s.quests.find((q) => q.date === MON && q.title === 'Hydration')!
+    expect(water().target).toBe(13)
+    expect(weightLockedUntil(s, MON)).toBe(addDays(MON, 7))
+    expect(logBodyWeight(s, 70, addDays(MON, 3), at(MON, 9))).toBe(s)
+    const d = addDays(MON, 7)
+    s = logBodyWeight(advanceTo(s, d, at(d, 8)), 100, d, at(d, 9))
+    expect(s.profile.weightKg).toBe(100)
+    expect(s.bodyWeights!.length).toBe(2)
+    expect(s.quests.find((q) => q.date === d && q.title === 'Hydration')!.target).toBe(16)
   })
 })

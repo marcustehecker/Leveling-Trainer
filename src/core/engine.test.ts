@@ -125,7 +125,7 @@ describe('workout XP and anti-farming', () => {
   it('advances count quests from logged sets and manual taps', () => {
     let s = start()
     const water = questsFor(s, MON).find((q) => q.title === 'Hydration')!
-    for (let i = 0; i < 6; i++) s = progressQuest(s, water.id, 1, MON, at(MON))
+    for (let i = 0; i < water.target; i++) s = progressQuest(s, water.id, 1, MON, at(MON))
     expect(s.quests.find((q) => q.id === water.id)!.status).toBe('done')
     expect(s.quests.find((q) => q.id === water.id)!.verification).toBe('Self-reported')
   })
@@ -252,11 +252,13 @@ describe('records, body weight and achievements', () => {
       expect(rec.items[0].after.weightKg).toBe(16)
     }
   })
-  it('keeps one body weight entry per day and unlocks body weight achievements', () => {
+  it('takes one body weight entry a week and unlocks body weight achievements', () => {
     let s = start()
-    for (let i = 0; i < 5; i++) s = logBodyWeight(s, 80 + i, addDays(MON, i), at(addDays(MON, i)))
-    s = logBodyWeight(s, 90.04, addDays(MON, 4), at(addDays(MON, 4)))
+    for (let i = 0; i < 5; i++) s = logBodyWeight(s, 80 + i, addDays(MON, i * 7), at(addDays(MON, i * 7)))
+    s = logBodyWeight(s, 90.04, addDays(MON, 29), at(addDays(MON, 29)))
     expect(s.bodyWeights).toHaveLength(5)
+    expect(s.bodyWeights!.at(-1)!.kg).toBe(84)
+    s = logBodyWeight(s, 90.04, addDays(MON, 35), at(addDays(MON, 35)))
     expect(s.bodyWeights!.at(-1)!.kg).toBe(90)
     expect(s.achievements.body_5).toBeTruthy()
   })

@@ -3,10 +3,11 @@ import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../core/achievements'
 import { EXERCISE_BY_ID } from '../core/exercises'
 import { addDays, range, weekStart } from '../core/dates'
 import { isTrainingDay } from '../core/plan'
-import { logBodyWeight, statLevel } from '../core/engine'
+import { statLevel } from '../core/engine'
 import type { GameState, StatId } from '../core/types'
-import { Btn, Panel, RANK_COLOR, RankEmblem, Tag } from '../ui/components'
-import { fromDisplayWeight, nowIso, todayKey, toDisplayWeight, weightUnit } from '../store'
+import { Panel, RANK_COLOR, RankEmblem, Tag } from '../ui/components'
+import { todayKey, toDisplayWeight, weightUnit } from '../store'
+import { WeightUpdate } from '../ui/WeightUpdate'
 import { STAT_COLOR, STAT_LABEL } from './labels'
 
 type Series = { name: string; color: string; points: { date: string; v: number }[] }
@@ -119,26 +120,16 @@ function StrengthChart({ s }: { s: GameState }) {
 
 function BodyWeight({ s, update }: { s: GameState; update: (fn: (s: GameState) => GameState) => void }) {
   const units = s.profile.units
-  const today = todayKey()
   const list = s.bodyWeights ?? []
   const latest = list[list.length - 1]
-  const [val, setVal] = useState('')
-  const n = Number(val)
-  const ok = val !== '' && Number.isFinite(n) && n > (units === 'imperial' ? 50 : 25) && n < (units === 'imperial' ? 700 : 320)
   const first = list[0]
   const change = first && latest && list.length > 1 ? toDisplayWeight(latest.kg - first.kg, units) : null
   return (
     <div className="grid gap-3">
-      <div className="flex items-end gap-2">
-        <label className="grid flex-1 gap-1 text-xs text-mute">Today's weight ({weightUnit(units)})
-          <input inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} placeholder={latest ? String(toDisplayWeight(latest.kg, units)) : 'e.g. 170'}
-            className="h-11 rounded border border-edge bg-panel-2 px-3 text-base text-ink outline-none focus:border-sys" />
-        </label>
-        <Btn disabled={!ok} sfx="select" onClick={() => { update((x) => logBodyWeight(x, fromDisplayWeight(n, units), today, nowIso())); setVal('') }}>Log</Btn>
-      </div>
+      <WeightUpdate s={s} update={update} />
       {change !== null && <p className="text-xs text-mute">Change since {first.date}: <span className="text-ink">{change > 0 ? '+' : ''}{change}{weightUnit(units)}</span></p>}
       <LineChart label="Body weight over time" series={[{ name: 'Body weight', color: '#34d399', points: list.map((b) => ({ date: b.date, v: toDisplayWeight(b.kg, units) })) }]} />
-      <p className="text-[11px] text-mute">Optional. Weight goes up and down day to day; watch the trend, not single days.</p>
+      <p className="text-[11px] text-mute">Update once a week, ideally the same morning each week. Watch the trend, not single weigh-ins.</p>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { availableTitles, equipTitle, sickDaysUsed, toggleSickDay, updateProfile
 import { WEEKDAY_SHORT } from '../core/dates'
 import type { Equipment, GameState, Goal } from '../core/types'
 import { Btn, Panel } from '../ui/components'
+import { WeightUpdate } from '../ui/WeightUpdate'
 import { advanceTo } from '../core/engine'
 import { exportBackup, nowIso, readBackup, todayKey } from '../store'
 import { cloudEnabled, deleteAccount, signOutAccount, type Account } from '../cloud'
@@ -80,6 +81,10 @@ export function HunterTab({ s, update, commit, account, wipe }: { s: GameState; 
           </div>
         </Panel>
       )}
+
+      <Panel title="Body Weight">
+        <WeightUpdate s={s} update={update} />
+      </Panel>
 
       <Panel title="Hunter Profile">
         <div className="grid gap-4">

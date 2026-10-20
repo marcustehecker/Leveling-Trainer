@@ -22,6 +22,8 @@ export const PROMOTION: Record<Exclude<RankId, 'E'>, { activeWeeks: number; prs:
 
 export const ACTIVE_WEEK_RATIO = 0.75
 export const DEMOTION_WARNING_DAYS = 7
+/** Days between body weight updates. */
+export const WEIGHT_UPDATE_DAYS = 7
 
 export const WORKOUT_BASE_XP = 60
 export const WORKOUT_XP_PER_SET = 4

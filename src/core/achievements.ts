@@ -146,8 +146,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     { id: 'comeback', name: 'Second Awakening', description: 'Train again after a 7-day break.', title: 'Reawakened', test: (s) => cameBack(s, 7) },
     { id: 'rested', name: 'Rest Is Training', description: 'Take a sick day instead of training through it.', test: (s) => s.sickDays.length >= 1 },
     { id: 'rpe_10', name: 'Self-Aware', description: 'Rate the effort of 10 workouts.', test: (s) => s.workouts.filter((w) => w.rpe).length >= 10 },
-    { id: 'body_5', name: 'On the Scale', description: 'Log your body weight 5 times.', test: (s) => (s.bodyWeights?.length ?? 0) >= 5 },
-    { id: 'body_30', name: 'Data Hunter', description: 'Log your body weight 30 times.', title: 'Analyst', test: (s) => (s.bodyWeights?.length ?? 0) >= 30 },
+    { id: 'body_5', name: 'On the Scale', description: 'Update your body weight 5 weeks.', test: (s) => (s.bodyWeights?.length ?? 0) >= 5 },
+    { id: 'body_30', name: 'Data Hunter', description: 'Update your body weight 12 weeks.', title: 'Analyst', test: (s) => (s.bodyWeights?.length ?? 0) >= 12 },
   ]),
   ...group('Explorer', [
     { id: 'unique_10', name: 'Explorer', description: 'Try 10 different exercises.', test: (s) => uniqueExercises(s) >= 10 },

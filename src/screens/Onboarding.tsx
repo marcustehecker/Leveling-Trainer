@@ -4,6 +4,7 @@ import { WEEKDAY_SHORT } from '../core/dates'
 import type { AgeRange, Assessment, Equipment, Experience, GameState, Goal, Profile } from '../core/types'
 import { Btn, Panel, RankEmblem, Stepper, SystemText } from '../ui/components'
 import { KG_PER_LB, nowIso, todayKey } from '../store'
+import { waterAmount, waterGlasses } from '../core/quests'
 import { STAT_LABEL } from './labels'
 import { TermsConsent } from './Legal'
 import { play } from '../sfx'
@@ -97,6 +98,7 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
   ]
   const goals = d.goals.filter((g) => GOALS.some((o) => o.v === g))
 
+  const weightOk = Number(d.weight) > (d.units === 'imperial' ? 50 : 25) && Number(d.weight) < (d.units === 'imperial' ? 700 : 320)
   const steps: { title: string; hint: string; body: ReactNode; valid?: boolean; custom?: boolean; skippable?: boolean }[] = [
     {
       title: 'Player Detected',
@@ -122,11 +124,12 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
     },
     {
       title: 'Body Data',
-      hint: 'Optional',
-      skippable: true,
+      hint: minor ? 'Optional' : 'Sets your water goal',
+      skippable: minor,
+      valid: minor || weightOk,
       body: (
         <div className="grid gap-4">
-          <p className="text-sm text-mute">Used only for context, never to judge you. Both are optional.</p>
+          <p className="text-sm text-mute">{minor ? 'Used only for context, never to judge you. Optional.' : 'Your weight sets your daily water goal. It is never used to judge you, and you can update it once a week.'}</p>
           <Choice<'metric' | 'imperial'> value={d.units} onChange={(v) => set({ units: v })}
             options={[{ v: 'imperial', label: 'Imperial (in, lb)' }, { v: 'metric', label: 'Metric (cm, kg)' }]} />
           <Field label={d.units === 'imperial' ? 'Height (inches)' : 'Height (cm)'}>
@@ -134,8 +137,11 @@ export function Onboarding({ onDone, defaultName = '' }: { onDone: (s: GameState
           </Field>
           {!minor && (
             <Field label={d.units === 'imperial' ? 'Weight (lb)' : 'Weight (kg)'}>
-              <input className={input} inputMode="decimal" value={d.weight} onChange={(e) => set({ weight: e.target.value })} placeholder="Optional, skip anytime" />
+              <input className={input} inputMode="decimal" value={d.weight} onChange={(e) => set({ weight: e.target.value })} placeholder={d.units === 'imperial' ? 'e.g. 170' : 'e.g. 75'} />
             </Field>
+          )}
+          {!minor && weightOk && (
+            <p className="anim-rise text-sm text-glow">[Daily water goal: {waterGlasses(weightKgOf(d), false)} glasses, {waterAmount(waterGlasses(weightKgOf(d), false), d.units)}. +2 on training days.]</p>
           )}
         </div>
       ),
@@ -360,4 +366,9 @@ function AssessmentReveal({ s, onEnter }: { s: GameState; onEnter: () => void })
       )}
     </div>
   )
+}
+
+function weightKgOf(d: Draft) {
+  const w = Number(d.weight)
+  return d.units === 'imperial' ? w * KG_PER_LB : w
 }
