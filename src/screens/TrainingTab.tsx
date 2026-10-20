@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
@@ -8,6 +8,7 @@ import type { GameState, LoggedExercise, WorkoutInput, WorkoutType } from '../co
 import { Btn, Panel, Tag } from '../ui/components'
 import { fromDisplayWeight, nowIso, todayKey, toDisplayWeight, weightUnit } from '../store'
 import { STAT_COLOR, STAT_LABEL } from './labels'
+import { MAX_SESSION_MIN } from '../core/balance'
 
 const DRAFT_KEY = 'the-system:workout-draft'
 
@@ -208,14 +209,17 @@ function PlanDayView({ day, s, onSwap }: { day: PlanDay; s: GameState; onSwap?: 
 function Logger({ s, draft, setDraft, onSubmit }: { s: GameState; draft: Draft; setDraft: (d: Draft | null) => void; onSubmit: (w: WorkoutInput) => string | null }) {
   const units = s.profile.units
   const [rpe, setRpe] = useState<number | undefined>()
-  const [minutes, setMinutes] = useState(() => Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000)))
+  const elapsed = () => Math.min(MAX_SESSION_MIN, Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000)))
+  const [minutes, setMinutes] = useState(elapsed)
+  // Once the player types a duration, stop the timer from overwriting it.
+  const typed = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [rest, setRest] = useState<number | null>(null)
   const [picking, setPicking] = useState<number | 'add' | null>(null)
 
   useEffect(() => {
     const t = setInterval(() => {
-      setMinutes(Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000)))
+      if (!typed.current) setMinutes(elapsed())
       setRest((r) => (r === null ? null : r <= 1 ? null : r - 1))
     }, 1000)
     return () => clearInterval(t)
@@ -283,7 +287,7 @@ function Logger({ s, draft, setDraft, onSubmit }: { s: GameState; draft: Draft; 
 
       <Panel title="Session">
         <div className="grid gap-4">
-          <label className="flex items-center justify-between gap-3 text-sm">Duration (min)<NumIn value={minutes} label="duration" onChange={setMinutes} /></label>
+          <label className="flex items-center justify-between gap-3 text-sm">Duration (min)<NumIn value={minutes} label="duration" onChange={(v) => { typed.current = true; setMinutes(v) }} /></label>
           <div>
             <div className="mb-2 text-sm">Effort (RPE) <span className="text-xs text-mute">1 easy · 10 max effort. +{5} XP for recording it.</span></div>
             <div className="grid grid-cols-10 gap-1">
