@@ -6,6 +6,7 @@ import type { GameState, Quest } from '../core/types'
 import { Bar, Btn, Panel, RANK_COLOR, RANK_NAME, RankEmblem, Tag } from '../ui/components'
 import { nowIso, todayKey } from '../store'
 import { StreakBadge } from '../ui/StreakFlame'
+import { ShadowArmyPanel } from '../ui/ShadowArmy'
 import { STAT_ABBR, STAT_COLOR, STAT_LABEL } from './labels'
 
 const DAILY: Quest['type'][] = ['main', 'side', 'recovery', 'habit', 'sleep']
@@ -107,6 +108,8 @@ export function SystemTab({ s, update, goTraining }: { s: GameState; update: (fn
       </Panel>
 
       <RaidPanel s={s} today={today} goTraining={goTraining} />
+
+      <ShadowArmyPanel s={s} />
 
       {weekly && (
         <Panel title="Weekly Quest">

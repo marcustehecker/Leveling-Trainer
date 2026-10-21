@@ -4,6 +4,7 @@ import * as B from './balance'
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from './achievements'
 import { levelInfo, statLevel } from './levels'
 import { applyWorkout, BOSS_BY_ID, createRaid, type RaidHit } from './raids'
+import { canGuardStreak, earnedMilestones, questBonusPct, SHADOW, SHADOW_BY_ID, shadowForBoss, shadowLevel, trainShadows, workoutBonusPct } from './shadows'
 import { addDays, daysBetween, range, weekday, weekStart } from './dates'
 import { EXERCISE_BY_ID } from './exercises'
 import { isTrainingDay } from './plan'
@@ -152,7 +153,17 @@ function unlock(s: GameState, id: string, date: DateKey, now: string) {
 }
 
 function checkAchievements(s: GameState, date: DateKey, now: string) {
+  for (const sh of earnedMilestones(s)) arise(s, sh.id, date, now)
   for (const a of ACHIEVEMENTS) if (!s.achievements[a.id] && a.test(s)) unlock(s, a.id, date, now)
+}
+
+/** A shadow joins the army. */
+function arise(s: GameState, id: string, date: DateKey, now: string) {
+  const army = (s.shadows ??= {})
+  if (army[id]) return
+  army[id] = { since: date, xp: 0 }
+  ceremony(s, { kind: 'arise', shadowId: id })
+  log(s, date, now, `[SYSTEM] ARISE. ${SHADOW_BY_ID[id]?.name ?? id} has joined your Shadow Army.`, 'rare')
 }
 
 function checkTrial(s: GameState, date: DateKey, now: string) {
@@ -248,8 +259,12 @@ function closeDay(s: GameState, d: DateKey, now: string) {
     }
   }
 
-  if (planned && !trained && !sick) s.streak = 0
-  else if (!active && !sick && s.inactiveStreak > B.INACTIVITY_GRACE_DAYS) s.streak = 0
+  if (planned && !trained && !sick) {
+    if (s.streak > 0 && canGuardStreak(s, d)) {
+      s.shadowGuardUsed = d
+      log(s, d, now, `[SYSTEM] Igris guarded your ${s.streak} day streak. He can do this again in ${SHADOW.GUARD_DAYS} days.`, 'rare')
+    } else s.streak = 0
+  } else if (!active && !sick && s.inactiveStreak > B.INACTIVITY_GRACE_DAYS) s.streak = 0
   else s.streak += 1
   s.bestStreak = Math.max(s.bestStreak, s.streak)
 
@@ -373,7 +388,7 @@ function completeQuest(s: GameState, q: Quest, today: DateKey, now: string, veri
       log(s, today, now, `[SYSTEM] Penalty Quest cleared. ${amt} XP restored.`, 'gain')
     }
   } else if (q.type !== 'trial') {
-    xp = gainXp(s, today, now, q.xp, q.title)
+    xp = gainXp(s, today, now, Math.round(q.xp * (1 + questBonusPct(s) / 100)), q.title)
     log(s, today, now, `[SYSTEM] Quest complete: ${q.title}. +${xp} XP.`, 'gain')
   }
   addStat(s, q.stat, q.stat === 'recovery' ? q.xp : q.xp / 2)
@@ -471,7 +486,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   const base = Math.min(B.WORKOUT_MAX_XP, B.WORKOUT_BASE_XP + B.WORKOUT_XP_PER_SET * done.length)
   const bonus = (planned ? B.PLANNED_WORKOUT_BONUS : 0) + (input.rpe ? B.RPE_BONUS : 0)
   const prXp = Math.min(prs.length, B.MAX_REWARDED_PRS) * B.PR_XP
-  const raw = Math.round((base + bonus + prXp) * mult)
+  const raw = Math.round((base + bonus + prXp) * mult * (1 + workoutBonusPct(s, input) / 100))
   const xp = raw > 0 ? gainXp(s, today, now, raw, prior > 0 ? `Workout (repeat ×${mult})` : 'Workout logged') : 0
   s.prCount += prs.length
   if (recordItems.length) ceremony(s, { kind: 'record', items: recordItems })
@@ -532,6 +547,10 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
     }
   }
 
+  for (const id of trainShadows(s, input)) {
+    log(s, today, now, `[SYSTEM] ${SHADOW_BY_ID[id].name} reached shadow level ${shadowLevel(s.shadows![id].xp)}.`, 'gain')
+  }
+
   // Dungeon Raid damage (only from what was actually logged, within the raid limits).
   openRaid(s, today, now)
   const raid = currentRaid(s, today)
@@ -547,6 +566,12 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
       addStat(s, boss.metric === 'minutes' ? 'endurance' : 'strength', 60)
       ceremony(s, { kind: 'raidCleared', bossId: raid.bossId, xp: got })
       log(s, today, now, `[SYSTEM] Raid cleared: ${boss.name} defeated. +${got} XP.`, 'rare')
+      const sh = shadowForBoss(raid.bossId)
+      if (sh && !s.shadows?.[sh.id]) arise(s, sh.id, today, now)
+      else if (sh) {
+        s.shadows![sh.id].xp += SHADOW.REPEAT_BOSS_XP
+        log(s, today, now, `[SYSTEM] ${sh.name} absorbed the defeated boss and grew stronger.`, 'gain')
+      }
     }
   }
 

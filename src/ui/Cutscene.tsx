@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { describeBonus, SHADOW_BY_ID } from '../core/shadows'
 import type { RankId } from '../core/types'
 import { play } from '../sfx'
 import { RANK_COLOR, RANK_NAME, RankEmblem, SystemText } from './components'
@@ -120,6 +121,38 @@ export function RankUpCutscene({ rank, onClose }: { rank: RankId; onClose: () =>
       <div className="cs-sub-late mt-3 max-w-xs px-6 text-center text-sm text-white/90">
         {text && <SystemText text={`[Trial cleared. You are now a ${rank}-Rank Hunter: ${RANK_NAME[rank]}.]`} speed={20} />}
       </div>
+    </Shell>
+  )
+}
+
+/** A shadow drawn as a black silhouette with a violet aura. */
+export function ShadowSilhouette({ icon, size = 64, locked }: { icon: string; size?: number; locked?: boolean }) {
+  return <span className={`shadow-sil ${locked ? 'locked' : ''}`} style={{ fontSize: size, lineHeight: 1 }} aria-hidden>{icon}</span>
+}
+
+export function AriseCutscene({ shadowId, onClose }: { shadowId: string; onClose: () => void }) {
+  const sh = SHADOW_BY_ID[shadowId]
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    play('rankup')
+    const t = [window.setTimeout(() => play('levelup'), 1300), window.setTimeout(() => setReady(true), 3000)]
+    return () => t.forEach((x) => window.clearTimeout(x))
+  }, [])
+  const smoke = useMemo(() => Array.from({ length: 14 }, (_, i) => ({ left: 8 + ((i * 53) % 84), delay: (i * 0.17) % 1.6, size: 90 + ((i * 37) % 90) })), [])
+  if (!sh) return null
+  return (
+    <Shell onClose={onClose} ready={ready} tint="#7c3aed">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3" aria-hidden>
+        {smoke.map((p, i) => <i key={i} className="arise-smoke" style={{ left: `${p.left}%`, width: p.size, height: p.size, animationDelay: `${p.delay}s` }} />)}
+      </div>
+      <div className="arise-word sys-title text-6xl text-violet-100" style={{ letterSpacing: '.35em', paddingLeft: '.35em' }}>Arise</div>
+      <div className="relative mt-6 flex h-56 w-56 items-end justify-center">
+        <Ring color="#8b5cf6" size={224} />
+        <div className="arise-rise relative"><ShadowSilhouette icon={sh.icon} size={140} /></div>
+      </div>
+      <div className="cs-slam-late sys-title glow-text mt-4 text-3xl text-white">{sh.name}</div>
+      <div className="cs-sub-late mt-1 sys-title text-xs text-violet-300">{sh.grade}-Grade Shadow</div>
+      <div className="cs-sub-late mt-3 max-w-xs px-6 text-center text-sm text-violet-100/90">{describeBonus(sh)}</div>
     </Shell>
   )
 }

@@ -4,12 +4,13 @@ import { BOSS_BY_ID, RAID } from '../core/raids'
 import { useEffect } from 'react'
 import { play } from '../sfx'
 import { toDisplayWeight, weightUnit } from '../store'
-import { LevelUpCutscene, RankUpCutscene } from './Cutscene'
+import { AriseCutscene, LevelUpCutscene, RankUpCutscene } from './Cutscene'
 import type { Ceremony } from '../core/types'
 import { Btn, Corners, NoticeHead, RANK_NAME, RankEmblem, SystemText } from './components'
 
 export function CeremonyOverlay({ c, onClose, units }: { c: Ceremony; onClose: () => void; units: 'metric' | 'imperial' }) {
   if (c.kind === 'levelUp') return <LevelUpCutscene key={`${c.from}-${c.to}`} from={c.from} to={c.to} onClose={onClose} />
+  if (c.kind === 'arise') return <AriseCutscene key={c.shadowId} shadowId={c.shadowId} onClose={onClose} />
   if (c.kind === 'rankUp') return <RankUpCutscene key={c.rank} rank={c.rank} onClose={onClose} />
   return <Notice c={c} onClose={onClose} units={units} />
 }
