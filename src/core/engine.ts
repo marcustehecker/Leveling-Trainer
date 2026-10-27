@@ -598,20 +598,49 @@ export function logLateWorkout(s0: GameState, input: WorkoutInput, day: DateKey,
   if (input.durationMin < B.LATE_LOG_MIN_MINUTES) return { state: s0, result: { ok: false, reason: `A late workout needs at least ${B.LATE_LOG_MIN_MINUTES} minutes.` } }
   const r = logWorkout(s0, input, day, now, { late: true })
   if (!r.result.ok) return r
-  const s = r.state
-  const p = s.penalties.find((x) => x.date === day && !x.refunded)
-  if (!p) return r
+  const restored = cancelPenalty(r.state, day, today, now)
+  return { state: r.state, result: restored === null ? r.result : { ...r.result, restored } }
+}
+
+/**
+ * Move a workout logged today back to a recent missed day (for when it was logged on the wrong
+ * day). Only works for a day that has an uncancelled penalty. The workout's XP stays as it was.
+ */
+export function moveWorkoutToDay(s0: GameState, workoutId: string, day: DateKey, today: DateKey, now: string): { state: GameState; error?: string; restored?: number } {
+  const w = s0.workouts.find((x) => x.id === workoutId)
+  if (!w || w.date !== today) return { state: s0, error: 'Only a workout logged today can be moved.' }
+  if (!lateLogDays(s0, today).includes(day) || !s0.penalties.some((p) => p.date === day && !p.cancelled)) {
+    return { state: s0, error: 'That day has no missed training to fix.' }
+  }
+  const s = clone(s0)
+  const mw = s.workouts.find((x) => x.id === workoutId)!
+  mw.date = day
+  mw.late = true
+  mw.planned = isTrainingDay(s.profile, day)
+  s.workouts.sort((a, b) => b.date.localeCompare(a.date) || b.loggedAt.localeCompare(a.loggedAt))
+  log(s, today, now, `[SYSTEM] ${mw.title} moved to ${day}.`, 'info')
+  const restored = cancelPenalty(s, day, today, now) ?? 0
+  return { state: s, restored }
+}
+
+/** Undo the penalty for a day that turned out to have training. Returns the XP restored, or null if there was none. */
+function cancelPenalty(s: GameState, day: DateKey, today: DateKey, now: string): number | null {
+  const p = s.penalties.find((x) => x.date === day && !x.cancelled)
+  if (!p) return null
+  // A cleared Penalty Quest already returned part of the XP; give back the rest.
+  const back = p.refunded ? p.lost - Math.round(p.lost * B.PENALTY_REFUND_RATIO) : p.lost
   p.refunded = true
-  if (p.lost > 0) refundXp(s, today, now, p.lost, 'Late log: missed day restored')
+  p.cancelled = true
+  if (back > 0) refundXp(s, today, now, back, 'Missed day restored')
   s.quests = s.quests.filter((q) => q.id !== p.questId)
   s.ceremonies = s.ceremonies.filter((c) => !(c.kind === 'penalty' && c.lost === p.lost))
   s.missStreak = Math.max(0, s.missStreak - 1)
   // Rebuild the streak as if the day had been logged on time.
   s.streak = streakBefore(s, today)
   s.bestStreak = Math.max(s.bestStreak, s.streak)
-  log(s, today, now, `[SYSTEM] Late training recorded for ${day}. Penalty cancelled: ${p.lost} XP restored and your streak is back to ${s.streak} days.`, 'rare')
+  log(s, today, now, `[SYSTEM] Training found for ${day}. Penalty cancelled: ${back} XP restored and your streak is back to ${s.streak} days.`, 'rare')
   checkAchievements(s, today, now)
-  return { state: s, result: { ...r.result, restored: p.lost } }
+  return back
 }
 
 /** Streak length up to (not including) day d, counted back over days that would not have broken it. */

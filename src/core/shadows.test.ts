@@ -81,3 +81,24 @@ describe('late logging', () => {
     expect(logLateWorkout(u, pushups(), wed, fri, at(fri, 0)).result.ok).toBe(true)
   })
 })
+
+describe('moving a workout to a missed day', () => {
+  it("moves today's workout back to yesterday and cancels yesterday's penalty", async () => {
+    const { moveWorkoutToDay } = await import('./engine')
+    let s = logWorkout(start(), pushups(), MON, at(MON)).state
+    const wed = addDays(MON, 2), thu = addDays(MON, 3)
+    s = advanceTo(s, thu, at(thu, 8))
+    s = logWorkout(s, pushups(), thu, at(thu)).state
+    const id = s.workouts[0].id
+    const xp = s.xp
+    const pen = s.penalties.find((p) => p.date === wed)!
+    const r = moveWorkoutToDay(s, id, wed, thu, at(thu, 11))
+    expect(r.error).toBeUndefined()
+    expect(r.state.workouts.find((w) => w.id === id)!.date).toBe(wed)
+    // Today's workout cleared the Penalty Quest (75% back); moving it returns the rest.
+    expect(r.state.xp).toBe(xp + pen.lost - Math.round(pen.lost * 0.75))
+    expect(r.state.quests.some((q) => q.id === pen.questId)).toBe(false)
+    expect(r.state.streak).toBeGreaterThan(0)
+    expect(moveWorkoutToDay(r.state, id, wed, thu, at(thu, 12)).error).toBeTruthy()
+  })
+})

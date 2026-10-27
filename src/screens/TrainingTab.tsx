@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { lateLogDays, logLateWorkout, logWorkout, questsFor, updateProfile } from '../core/engine'
+import { lateLogDays, logLateWorkout, moveWorkoutToDay, logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
 import { describeTarget, generatePlan, planDayFor, WORKOUT_TYPES, type PlanDay } from '../core/plan'
 import { addDays, WEEKDAY_SHORT, weekday } from '../core/dates'
@@ -117,7 +117,12 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
             </Panel>
           )}
           <Btn variant="ghost" onClick={() => setDraft({ title: 'Custom Session', startedAt: Date.now(), exercises: [] })}>Log a Custom Session</Btn>
-          {lateDays.length > 0 && <LatePanel s={s} days={lateDays} today={today} start={setDraft} />}
+          {lateDays.length > 0 && <LatePanel s={s} days={lateDays} today={today} start={setDraft} move={(id, day) => {
+            const r = moveWorkoutToDay(s, id, day, today, nowIso())
+            if (r.error) { onLogged(r.error); return }
+            update(() => r.state)
+            onLogged(`Workout moved. Penalty cancelled, ${r.restored} XP restored`)
+          }} />}
           {editing ? <RoutineEditor s={s} onClose={() => setEditing(false)} onSave={(trainingDays, routine) => {
             update((x) => updateProfile(x, { trainingDays, routine }, undefined, today, nowIso()))
             setEditing(false)
@@ -440,25 +445,29 @@ function History({ s }: { s: GameState }) {
 }
 
 /** Lets the player add a workout they forgot to log on one of the last couple of days. */
-function LatePanel({ s, days, today, start }: { s: GameState; days: string[]; today: string; start: (d: Draft) => void }) {
-  const penalties = days.map((d) => s.penalties.find((p) => p.date === d && !p.refunded)).filter((p) => p !== undefined)
+function LatePanel({ s, days, today, start, move }: { s: GameState; days: string[]; today: string; start: (d: Draft) => void; move: (workoutId: string, day: string) => void }) {
+  const todays = s.workouts.filter((w) => w.date === today)
+  const penalties = days.map((d) => s.penalties.find((p) => p.date === d && !p.cancelled)).filter((p) => p !== undefined)
   const label = (d: string) => (d === addDays(today, -1) ? 'Yesterday' : new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))
   return (
     <Panel title="Forgot to Log?" tone={penalties.length ? 'danger' : undefined}>
       <p className="text-sm text-mute">
         {penalties.length
-          ? `[A planned day was marked as missed and ${penalties.reduce((a, p) => a + p.lost, 0)} XP was lost. If you did train, log it here: the XP comes back, the Penalty Quest is cancelled and your streak is restored.]`
+          ? '[A planned day was marked as missed and XP was lost. If you did train, log it here: the XP comes back, the Penalty Quest is cancelled and your streak is restored.]'
           : '[Trained recently but forgot to log it? You can still add it.]'}
       </p>
-      <p className="mt-2 text-[11px] text-mute">Only the last 2 days can be added, each needs at least 10 minutes, and late workouts don't count toward Dungeon Raids.</p>
+      <p className="mt-2 text-[11px] text-mute">Logged on the wrong day? Use Move to shift today's workout back. Only the last 2 days can be added, each needs at least 10 minutes, and late workouts don't count toward Dungeon Raids.</p>
       <div className="mt-3 grid gap-2">
         {days.map((d) => {
           const plan = planDayFor(s.profile, s.assessment, d)
-          const missed = s.penalties.some((p) => p.date === d && !p.refunded)
+          const missed = s.penalties.some((p) => p.date === d && !p.cancelled)
           return (
             <div key={d} className="grid gap-2 rounded border border-sky-900/50 p-2">
               <div className="sys-title text-xs text-glow">{label(d)}{missed ? ' · missed' : ''}</div>
               {plan && <Btn variant={missed ? 'danger' : 'primary'} onClick={() => start({ ...draftFromPlan(plan, s), title: `${plan.title} (${label(d)})`, forDate: d })}>Log {plan.title}</Btn>}
+              {missed && todays.map((w) => (
+                <Btn key={w.id} variant="rare" onClick={() => { if (confirm(`Move "${w.title}" from today to ${label(d)}? Its XP stays the same and ${label(d)}'s penalty is cancelled.`)) move(w.id, d) }}>Move Today's {w.title} Here</Btn>
+              ))}
               <Btn variant="ghost" onClick={() => start({ title: `Session (${label(d)})`, startedAt: Date.now(), exercises: [], forDate: d })}>Log a Custom Session</Btn>
             </div>
           )

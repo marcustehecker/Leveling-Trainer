@@ -127,8 +127,10 @@ export interface Penalty {
   lost: number
   refunded: boolean
   questId: string
-  /** Streak before the miss reset it, so a late log can restore it. */
+  /** Streak before the miss reset it. */
   streakBefore?: number
+  /** The day turned out to have training, so the penalty was undone in full. */
+  cancelled?: boolean
 }
 
 export type Ceremony =
