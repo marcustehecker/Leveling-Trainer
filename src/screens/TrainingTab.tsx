@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { logWorkout, questsFor, updateProfile } from '../core/engine'
+import { lateLogDay, logLateWorkout, logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
 import { describeTarget, generatePlan, planDayFor, WORKOUT_TYPES, type PlanDay } from '../core/plan'
 import { WEEKDAY_SHORT, weekday } from '../core/dates'
@@ -16,6 +16,8 @@ interface Draft {
   title: string
   planDayId?: string
   startedAt: number
+  /** Set when logging yesterday's forgotten workout. */
+  forDate?: string
   exercises: (LoggedExercise & { restSec: number })[]
 }
 
@@ -61,11 +63,23 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   const trial = questsFor(s, today).find((q) => q.type === 'trial' && q.status === 'active')
   const penalty = questsFor(s, today).find((q) => q.type === 'penalty' && q.status === 'active')
   const loggedToday = s.workouts.filter((w) => w.date === today).length
+  const lateDay = lateLogDay(s, today)
+  const lateDayPlan = lateDay ? planDayFor(s.profile, s.assessment, lateDay) : null
+  const latePenalty = lateDay ? s.penalties.find((p) => p.date === lateDay && !p.refunded) : undefined
 
   useEffect(() => saveDraft(draft), [draft])
 
   if (draft) {
     return <Logger s={s} draft={draft} setDraft={setDraft} onSubmit={(input) => {
+      if (draft.forDate) {
+        if (draft.forDate !== lateLogDay(s, today)) { setDraft(null); return 'Yesterday can no longer be logged late.' }
+        const late = logLateWorkout(s, input, today, nowIso())
+        if (!late.result.ok) return late.result.reason
+        update(() => late.state)
+        setDraft(null)
+        onLogged(`Yesterday's workout added. +${late.result.xp} XP${late.result.restored !== undefined ? ` · Penalty cancelled, ${late.result.restored} XP restored` : ''}`)
+        return null
+      }
       const { state, result } = logWorkout(s, input, today, nowIso())
       if (!result.ok) return result.reason
       update(() => state)
@@ -105,6 +119,20 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
             </Panel>
           )}
           <Btn variant="ghost" onClick={() => setDraft({ title: 'Custom Session', startedAt: Date.now(), exercises: [] })}>Log a Custom Session</Btn>
+          {lateDay && (
+            <Panel title="Forgot Yesterday?" tone={latePenalty ? 'danger' : undefined}>
+              <p className="text-sm text-mute">
+                {latePenalty
+                  ? `[Yesterday's planned training was marked as missed and ${latePenalty.lost} XP was lost. If you did train, log it now: the XP comes back, the Penalty Quest is cancelled and your streak is restored.]`
+                  : '[Trained yesterday but forgot to log it? You can still add it today.]'}
+              </p>
+              <p className="mt-2 text-[11px] text-mute">Only yesterday can be added, it needs at least 10 minutes, and late workouts don't count toward Dungeon Raids.</p>
+              <div className="mt-3 grid gap-2">
+                {lateDayPlan && <Btn variant={latePenalty ? 'danger' : 'primary'} onClick={() => setDraft({ ...draftFromPlan(lateDayPlan, s), title: `${lateDayPlan.title} (yesterday)`, forDate: lateDay })}>Log Yesterday's {lateDayPlan.title}</Btn>}
+                <Btn variant="ghost" onClick={() => setDraft({ title: 'Session (yesterday)', startedAt: Date.now(), exercises: [], forDate: lateDay })}>Log a Custom Session for Yesterday</Btn>
+              </div>
+            </Panel>
+          )}
           {editing ? <RoutineEditor s={s} onClose={() => setEditing(false)} onSave={(trainingDays, routine) => {
             update((x) => updateProfile(x, { trainingDays, routine }, undefined, today, nowIso()))
             setEditing(false)
@@ -212,9 +240,10 @@ function Logger({ s, draft, setDraft, onSubmit }: { s: GameState; draft: Draft; 
   const units = s.profile.units
   const [rpe, setRpe] = useState<number | undefined>()
   const elapsed = () => Math.min(MAX_SESSION_MIN, Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000)))
-  const [minutes, setMinutes] = useState(elapsed)
+  // A late log is for yesterday, so it starts at the usual session length instead of a running timer.
+  const [minutes, setMinutes] = useState(() => (draft.forDate ? s.profile.sessionMinutes : elapsed()))
   // Once the player types a duration, stop the timer from overwriting it.
-  const typed = useRef(false)
+  const typed = useRef(!!draft.forDate)
   const [error, setError] = useState<string | null>(null)
   const [rest, setRest] = useState<number | null>(null)
   const [picking, setPicking] = useState<number | 'add' | null>(null)

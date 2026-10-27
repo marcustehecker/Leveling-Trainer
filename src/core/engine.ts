@@ -239,7 +239,7 @@ function closeDay(s: GameState, d: DateKey, now: string) {
     const lost = loseXp(s, d, now, loss, 'Missed planned training')
     const pid = nextId(s, 'p')
     const q = penaltyQuest(addDays(d, 1), pid, lost)
-    s.penalties.push({ id: pid, date: d, lost, refunded: false, questId: q.id })
+    s.penalties.push({ id: pid, date: d, lost, refunded: false, questId: q.id, streakBefore: s.streak })
     if (lost > 0) s.quests.push(q)
     ceremony(s, { kind: 'penalty', lost, reason: 'Planned training was not completed.' })
     log(s, d, now, `[SYSTEM] Planned training was not completed. ${lost} XP lost. Penalty Quest issued.`, 'loss')
@@ -441,7 +441,7 @@ function signature(w: WorkoutInput) {
   return JSON.stringify(w.exercises.map((e) => [e.exerciseId, e.sets.filter((x) => x.done).map((x) => [x.reps, x.weightKg, x.seconds])]))
 }
 
-export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, now: string): { state: GameState; result: LogResult } {
+export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, now: string, opts: { late?: boolean } = {}): { state: GameState; result: LogResult } {
   const fail = (reason: string) => ({ state: s0, result: { ok: false as const, reason } })
   if (!(input.durationMin > 0) || input.durationMin > B.MAX_SESSION_MIN) return fail('Session length looks wrong. Enter the minutes you trained.')
   const done = input.exercises.flatMap((e) => e.sets.filter((x) => x.done).map((x) => ({ e, x })))
@@ -503,7 +503,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   addStat(s, 'strength', prs.length * B.STAT_XP.strengthPerPr * mult)
   if (planned) addStat(s, 'discipline', B.STAT_XP.disciplinePerPlannedWorkout)
 
-  const w: WorkoutLog = { ...clone(input), id: nextId(s, 'w'), date: today, loggedAt: now, planned, xpAwarded: xp, prs }
+  const w: WorkoutLog = { ...clone(input), id: nextId(s, 'w'), date: today, loggedAt: now, planned, xpAwarded: xp, prs, ...(opts.late ? { late: true } : {}) }
   s.workouts.unshift(w)
   // Bounded so a cloud save stays well under Firestore's 1 MB document limit.
   if (s.workouts.length > 400) s.workouts.length = 400
@@ -551,9 +551,9 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
     log(s, today, now, `[SYSTEM] ${SHADOW_BY_ID[id].name} reached shadow level ${shadowLevel(s.shadows![id].xp)}.`, 'gain')
   }
 
-  // Dungeon Raid damage (only from what was actually logged, within the raid limits).
-  openRaid(s, today, now)
-  const raid = currentRaid(s, today)
+  // Dungeon Raid damage (only from what was actually logged, within the raid limits). Late logs never count.
+  if (!opts.late) openRaid(s, today, now)
+  const raid = opts.late ? null : currentRaid(s, today)
   let raidHit: (RaidHit & { boss: string; unit: string; left: number }) | undefined
   if (raid && raid.status === 'active') {
     const boss = BOSS_BY_ID[raid.bossId]
@@ -577,6 +577,51 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
   checkAchievements(s, today, now)
   return { state: s, result: { ok: true, xp, prs, completed, raid: raidHit } }
+}
+
+/** Yesterday, if a workout can still be logged for it: on or after registration and nothing logged that day. */
+export function lateLogDay(s: GameState, today: DateKey): DateKey | null {
+  const y = addDays(today, -1)
+  if (y < s.createdDate || workoutsOn(s, y).length > 0 || s.sickDays.includes(y)) return null
+  return y
+}
+
+/**
+ * Log a workout the player forgot to record yesterday. It counts for yesterday, and if missing
+ * it caused a penalty, the lost XP comes back in full, the Penalty Quest is cancelled and the
+ * streak is restored. Late logs never count toward raids.
+ */
+export function logLateWorkout(s0: GameState, input: WorkoutInput, today: DateKey, now: string): { state: GameState; result: LogResult & { restored?: number } } {
+  const y = lateLogDay(s0, today)
+  if (!y) return { state: s0, result: { ok: false, reason: 'Only yesterday can be logged late, and only if nothing was logged that day.' } }
+  if (input.durationMin < B.LATE_LOG_MIN_MINUTES) return { state: s0, result: { ok: false, reason: `A late workout needs at least ${B.LATE_LOG_MIN_MINUTES} minutes.` } }
+  const r = logWorkout(s0, input, y, now, { late: true })
+  if (!r.result.ok) return r
+  const s = r.state
+  const p = s.penalties.find((x) => x.date === y && !x.refunded)
+  if (!p) return r
+  p.refunded = true
+  if (p.lost > 0) refundXp(s, today, now, p.lost, 'Late log: missed day restored')
+  s.quests = s.quests.filter((q) => q.id !== p.questId)
+  s.ceremonies = s.ceremonies.filter((c) => !(c.kind === 'penalty' && c.lost === p.lost))
+  s.missStreak = Math.max(0, s.missStreak - 1)
+  const before = p.streakBefore ?? streakBefore(s, y)
+  s.streak = Math.max(s.streak, before + 1)
+  s.bestStreak = Math.max(s.bestStreak, s.streak)
+  log(s, today, now, `[SYSTEM] Late training recorded for yesterday. Penalty cancelled: ${p.lost} XP restored and your ${s.streak} day streak is back.`, 'rare')
+  checkAchievements(s, today, now)
+  return { state: s, result: { ...r.result, restored: p.lost } }
+}
+
+/** Streak length up to (not including) day d, counted back over days that would not have broken it. */
+function streakBefore(s: GameState, d: DateKey): number {
+  let n = 0
+  for (let k = addDays(d, -1); k >= s.createdDate; k = addDays(k, -1)) {
+    const missed = isTrainingDay(s.profile, k) && k !== s.createdDate && workoutsOn(s, k).length === 0 && !s.sickDays.includes(k)
+    if (missed && s.shadowGuardUsed !== k) break
+    n++
+  }
+  return n
 }
 
 /** Record today's body weight (kg), replacing an earlier entry from the same day. */

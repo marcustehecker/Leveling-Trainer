@@ -48,3 +48,31 @@ describe('shadow army', () => {
     expect(s.streak).toBe(0)
   })
 })
+
+describe('late logging', () => {
+  it("logs yesterday's forgotten workout, refunds the penalty and restores the streak", async () => {
+    const { lateLogDay, logLateWorkout } = await import('./engine')
+    // Train Monday, then miss Wednesday (planned).
+    let s = logWorkout(start(), pushups(), MON, at(MON)).state
+    const wed = addDays(MON, 2), thu = addDays(MON, 3)
+    s = advanceTo(s, thu, at(thu, 8))
+    const streakAfterMiss = s.streak
+    const xpAfterMiss = s.xp
+    const pen = s.penalties.find((p) => p.date === wed)!
+    expect(pen.lost).toBeGreaterThan(0)
+    expect(s.quests.some((q) => q.id === pen.questId)).toBe(true)
+    expect(lateLogDay(s, thu)).toBe(wed)
+
+    expect(logLateWorkout(s, { ...pushups(), durationMin: 5 }, thu, at(thu)).result.ok).toBe(false)
+    const r = logLateWorkout(s, pushups(), thu, at(thu))
+    expect(r.result.ok).toBe(true)
+    const t = r.state
+    expect(t.workouts[0].date).toBe(wed)
+    expect(t.workouts[0].late).toBe(true)
+    expect(t.xp).toBeGreaterThan(xpAfterMiss + pen.lost)
+    expect(t.quests.some((q) => q.id === pen.questId)).toBe(false)
+    expect(t.streak).toBeGreaterThan(streakAfterMiss)
+    expect(lateLogDay(t, thu)).toBeNull()
+    expect(logLateWorkout(t, pushups(), thu, at(thu)).result.ok).toBe(false)
+  })
+})

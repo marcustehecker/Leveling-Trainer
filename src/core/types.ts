@@ -102,6 +102,8 @@ export interface WorkoutLog extends WorkoutInput {
   planned: boolean
   xpAwarded: number
   prs: string[]
+  /** Logged the day after it happened. */
+  late?: boolean
 }
 
 export interface XpEvent {
@@ -125,6 +127,8 @@ export interface Penalty {
   lost: number
   refunded: boolean
   questId: string
+  /** Streak before the miss reset it, so a late log can restore it. */
+  streakBefore?: number
 }
 
 export type Ceremony =
