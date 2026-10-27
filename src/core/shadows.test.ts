@@ -51,7 +51,7 @@ describe('shadow army', () => {
 
 describe('late logging', () => {
   it("logs yesterday's forgotten workout, refunds the penalty and restores the streak", async () => {
-    const { lateLogDay, logLateWorkout } = await import('./engine')
+    const { lateLogDays, logLateWorkout } = await import('./engine')
     // Train Monday, then miss Wednesday (planned).
     let s = logWorkout(start(), pushups(), MON, at(MON)).state
     const wed = addDays(MON, 2), thu = addDays(MON, 3)
@@ -61,10 +61,10 @@ describe('late logging', () => {
     const pen = s.penalties.find((p) => p.date === wed)!
     expect(pen.lost).toBeGreaterThan(0)
     expect(s.quests.some((q) => q.id === pen.questId)).toBe(true)
-    expect(lateLogDay(s, thu)).toBe(wed)
+    expect(lateLogDays(s, thu)).toEqual([wed, addDays(MON, 1)])
 
-    expect(logLateWorkout(s, { ...pushups(), durationMin: 5 }, thu, at(thu)).result.ok).toBe(false)
-    const r = logLateWorkout(s, pushups(), thu, at(thu))
+    expect(logLateWorkout(s, { ...pushups(), durationMin: 5 }, wed, thu, at(thu)).result.ok).toBe(false)
+    const r = logLateWorkout(s, pushups(), wed, thu, at(thu))
     expect(r.result.ok).toBe(true)
     const t = r.state
     expect(t.workouts[0].date).toBe(wed)
@@ -72,7 +72,12 @@ describe('late logging', () => {
     expect(t.xp).toBeGreaterThan(xpAfterMiss + pen.lost)
     expect(t.quests.some((q) => q.id === pen.questId)).toBe(false)
     expect(t.streak).toBeGreaterThan(streakAfterMiss)
-    expect(lateLogDay(t, thu)).toBeNull()
-    expect(logLateWorkout(t, pushups(), thu, at(thu)).result.ok).toBe(false)
+    expect(lateLogDays(t, thu)).toEqual([addDays(MON, 1)])
+    expect(logLateWorkout(t, pushups(), wed, thu, at(thu)).result.ok).toBe(false)
+    // Just after midnight the missed day is two days back and can still be logged.
+    const fri = addDays(MON, 4)
+    const u = advanceTo(s, fri, at(fri, 0))
+    expect(lateLogDays(u, fri)).toContain(wed)
+    expect(logLateWorkout(u, pushups(), wed, fri, at(fri, 0)).result.ok).toBe(true)
   })
 })

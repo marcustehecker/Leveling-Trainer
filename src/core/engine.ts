@@ -579,36 +579,37 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   return { state: s, result: { ok: true, xp, prs, completed, raid: raidHit } }
 }
 
-/** Yesterday, if a workout can still be logged for it: on or after registration and nothing logged that day. */
-export function lateLogDay(s: GameState, today: DateKey): DateKey | null {
-  const y = addDays(today, -1)
-  if (y < s.createdDate || workoutsOn(s, y).length > 0 || s.sickDays.includes(y)) return null
-  return y
+/**
+ * Days a forgotten workout can still be logged for: the last 2 days, on or after registration,
+ * not sick and with nothing logged. Newest first. Two days covers logging just after midnight.
+ */
+export function lateLogDays(s: GameState, today: DateKey): DateKey[] {
+  return Array.from({ length: B.LATE_LOG_DAYS }, (_, i) => addDays(today, -1 - i))
+    .filter((d) => d >= s.createdDate && workoutsOn(s, d).length === 0 && !s.sickDays.includes(d))
 }
 
 /**
- * Log a workout the player forgot to record yesterday. It counts for yesterday, and if missing
- * it caused a penalty, the lost XP comes back in full, the Penalty Quest is cancelled and the
- * streak is restored. Late logs never count toward raids.
+ * Log a workout the player forgot to record on a recent day. It counts for that day, and if
+ * missing it caused a penalty, the lost XP comes back in full, the Penalty Quest is cancelled
+ * and the streak is restored. Late logs never count toward raids.
  */
-export function logLateWorkout(s0: GameState, input: WorkoutInput, today: DateKey, now: string): { state: GameState; result: LogResult & { restored?: number } } {
-  const y = lateLogDay(s0, today)
-  if (!y) return { state: s0, result: { ok: false, reason: 'Only yesterday can be logged late, and only if nothing was logged that day.' } }
+export function logLateWorkout(s0: GameState, input: WorkoutInput, day: DateKey, today: DateKey, now: string): { state: GameState; result: LogResult & { restored?: number } } {
+  if (!lateLogDays(s0, today).includes(day)) return { state: s0, result: { ok: false, reason: `Only the last ${B.LATE_LOG_DAYS} days can be logged late, and only if nothing was logged that day.` } }
   if (input.durationMin < B.LATE_LOG_MIN_MINUTES) return { state: s0, result: { ok: false, reason: `A late workout needs at least ${B.LATE_LOG_MIN_MINUTES} minutes.` } }
-  const r = logWorkout(s0, input, y, now, { late: true })
+  const r = logWorkout(s0, input, day, now, { late: true })
   if (!r.result.ok) return r
   const s = r.state
-  const p = s.penalties.find((x) => x.date === y && !x.refunded)
+  const p = s.penalties.find((x) => x.date === day && !x.refunded)
   if (!p) return r
   p.refunded = true
   if (p.lost > 0) refundXp(s, today, now, p.lost, 'Late log: missed day restored')
   s.quests = s.quests.filter((q) => q.id !== p.questId)
   s.ceremonies = s.ceremonies.filter((c) => !(c.kind === 'penalty' && c.lost === p.lost))
   s.missStreak = Math.max(0, s.missStreak - 1)
-  const before = p.streakBefore ?? streakBefore(s, y)
-  s.streak = Math.max(s.streak, before + 1)
+  // Rebuild the streak as if the day had been logged on time.
+  s.streak = streakBefore(s, today)
   s.bestStreak = Math.max(s.bestStreak, s.streak)
-  log(s, today, now, `[SYSTEM] Late training recorded for yesterday. Penalty cancelled: ${p.lost} XP restored and your ${s.streak} day streak is back.`, 'rare')
+  log(s, today, now, `[SYSTEM] Late training recorded for ${day}. Penalty cancelled: ${p.lost} XP restored and your streak is back to ${s.streak} days.`, 'rare')
   checkAchievements(s, today, now)
   return { state: s, result: { ...r.result, restored: p.lost } }
 }

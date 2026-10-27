@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { lateLogDay, logLateWorkout, logWorkout, questsFor, updateProfile } from '../core/engine'
+import { lateLogDays, logLateWorkout, logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
 import { describeTarget, generatePlan, planDayFor, WORKOUT_TYPES, type PlanDay } from '../core/plan'
-import { WEEKDAY_SHORT, weekday } from '../core/dates'
+import { addDays, WEEKDAY_SHORT, weekday } from '../core/dates'
 import type { GameState, LoggedExercise, WorkoutInput, WorkoutType } from '../core/types'
 import { Btn, Panel, Tag } from '../ui/components'
 import { fromDisplayWeight, nowIso, todayKey, toDisplayWeight, weightUnit } from '../store'
@@ -63,21 +63,19 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   const trial = questsFor(s, today).find((q) => q.type === 'trial' && q.status === 'active')
   const penalty = questsFor(s, today).find((q) => q.type === 'penalty' && q.status === 'active')
   const loggedToday = s.workouts.filter((w) => w.date === today).length
-  const lateDay = lateLogDay(s, today)
-  const lateDayPlan = lateDay ? planDayFor(s.profile, s.assessment, lateDay) : null
-  const latePenalty = lateDay ? s.penalties.find((p) => p.date === lateDay && !p.refunded) : undefined
+  const lateDays = lateLogDays(s, today)
 
   useEffect(() => saveDraft(draft), [draft])
 
   if (draft) {
     return <Logger s={s} draft={draft} setDraft={setDraft} onSubmit={(input) => {
       if (draft.forDate) {
-        if (draft.forDate !== lateLogDay(s, today)) { setDraft(null); return 'Yesterday can no longer be logged late.' }
-        const late = logLateWorkout(s, input, today, nowIso())
+        if (!lateLogDays(s, today).includes(draft.forDate)) { setDraft(null); return 'That day can no longer be logged late.' }
+        const late = logLateWorkout(s, input, draft.forDate, today, nowIso())
         if (!late.result.ok) return late.result.reason
         update(() => late.state)
         setDraft(null)
-        onLogged(`Yesterday's workout added. +${late.result.xp} XP${late.result.restored !== undefined ? ` · Penalty cancelled, ${late.result.restored} XP restored` : ''}`)
+        onLogged(`Late workout added. +${late.result.xp} XP${late.result.restored !== undefined ? ` · Penalty cancelled, ${late.result.restored} XP restored` : ''}`)
         return null
       }
       const { state, result } = logWorkout(s, input, today, nowIso())
@@ -119,20 +117,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
             </Panel>
           )}
           <Btn variant="ghost" onClick={() => setDraft({ title: 'Custom Session', startedAt: Date.now(), exercises: [] })}>Log a Custom Session</Btn>
-          {lateDay && (
-            <Panel title="Forgot Yesterday?" tone={latePenalty ? 'danger' : undefined}>
-              <p className="text-sm text-mute">
-                {latePenalty
-                  ? `[Yesterday's planned training was marked as missed and ${latePenalty.lost} XP was lost. If you did train, log it now: the XP comes back, the Penalty Quest is cancelled and your streak is restored.]`
-                  : '[Trained yesterday but forgot to log it? You can still add it today.]'}
-              </p>
-              <p className="mt-2 text-[11px] text-mute">Only yesterday can be added, it needs at least 10 minutes, and late workouts don't count toward Dungeon Raids.</p>
-              <div className="mt-3 grid gap-2">
-                {lateDayPlan && <Btn variant={latePenalty ? 'danger' : 'primary'} onClick={() => setDraft({ ...draftFromPlan(lateDayPlan, s), title: `${lateDayPlan.title} (yesterday)`, forDate: lateDay })}>Log Yesterday's {lateDayPlan.title}</Btn>}
-                <Btn variant="ghost" onClick={() => setDraft({ title: 'Session (yesterday)', startedAt: Date.now(), exercises: [], forDate: lateDay })}>Log a Custom Session for Yesterday</Btn>
-              </div>
-            </Panel>
-          )}
+          {lateDays.length > 0 && <LatePanel s={s} days={lateDays} today={today} start={setDraft} />}
           {editing ? <RoutineEditor s={s} onClose={() => setEditing(false)} onSave={(trainingDays, routine) => {
             update((x) => updateProfile(x, { trainingDays, routine }, undefined, today, nowIso()))
             setEditing(false)
@@ -449,6 +434,35 @@ function History({ s }: { s: GameState }) {
             </div>
           </details>
         ))}
+      </div>
+    </Panel>
+  )
+}
+
+/** Lets the player add a workout they forgot to log on one of the last couple of days. */
+function LatePanel({ s, days, today, start }: { s: GameState; days: string[]; today: string; start: (d: Draft) => void }) {
+  const penalties = days.map((d) => s.penalties.find((p) => p.date === d && !p.refunded)).filter((p) => p !== undefined)
+  const label = (d: string) => (d === addDays(today, -1) ? 'Yesterday' : new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' }))
+  return (
+    <Panel title="Forgot to Log?" tone={penalties.length ? 'danger' : undefined}>
+      <p className="text-sm text-mute">
+        {penalties.length
+          ? `[A planned day was marked as missed and ${penalties.reduce((a, p) => a + p.lost, 0)} XP was lost. If you did train, log it here: the XP comes back, the Penalty Quest is cancelled and your streak is restored.]`
+          : '[Trained recently but forgot to log it? You can still add it.]'}
+      </p>
+      <p className="mt-2 text-[11px] text-mute">Only the last 2 days can be added, each needs at least 10 minutes, and late workouts don't count toward Dungeon Raids.</p>
+      <div className="mt-3 grid gap-2">
+        {days.map((d) => {
+          const plan = planDayFor(s.profile, s.assessment, d)
+          const missed = s.penalties.some((p) => p.date === d && !p.refunded)
+          return (
+            <div key={d} className="grid gap-2 rounded border border-sky-900/50 p-2">
+              <div className="sys-title text-xs text-glow">{label(d)}{missed ? ' · missed' : ''}</div>
+              {plan && <Btn variant={missed ? 'danger' : 'primary'} onClick={() => start({ ...draftFromPlan(plan, s), title: `${plan.title} (${label(d)})`, forDate: d })}>Log {plan.title}</Btn>}
+              <Btn variant="ghost" onClick={() => start({ title: `Session (${label(d)})`, startedAt: Date.now(), exercises: [], forDate: d })}>Log a Custom Session</Btn>
+            </div>
+          )
+        })}
       </div>
     </Panel>
   )
