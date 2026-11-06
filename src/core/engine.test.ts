@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as B from './balance'
 import { addDays } from './dates'
 import {
-  advanceTo, createGame, levelInfo, logBodyWeight, logWorkout, progressQuest, promotionStatus, questsFor, statLevel, toggleSickDay,
+  advanceTo, applyWorkoutToTrial, createGame, levelInfo, logBodyWeight, logWorkout, progressQuest, promotionStatus, questsFor, statLevel, toggleSickDay,
 } from './engine'
 import { generatePlan } from './plan'
 import { ACHIEVEMENTS } from './achievements'
@@ -225,7 +225,32 @@ describe('ranks', () => {
     s = log(s, TUE, workout(4), 12)
     expect(s.quests.find((q) => q.id === trial.id)!.status).toBe('done')
     expect(s.rank).toBe('D')
+    expect(s.quests.filter((q) => q.type === 'trial' && q.status === 'active')).toHaveLength(0)
     expect(s.ceremonies.some((c) => c.kind === 'rankUp' && c.rank === 'D')).toBe(true)
+  })
+  it('lets a workout logged before the Trial unlocked count for it', () => {
+    let s = start()
+    s = log(s, TUE, workout(5), 9) // logged before the Trial exists
+    const w = s.workouts[0]
+    s = { ...s, xp: 2600, lifetimeXp: 2600, prCount: 1, activeWeeksAtRank: 2 }
+    s = advanceTo({ ...s, questsGeneratedFor: [] }, TUE, at(TUE, 10))
+    expect(promotionStatus(s)?.trialUnlocked).toBe(true)
+    const r = applyWorkoutToTrial(s, w.id, TUE, at(TUE, 11))
+    expect(r.error).toBeUndefined()
+    expect(r.state.rank).toBe('D')
+    expect(r.state.quests.filter((q) => q.type === 'trial').map((q) => q.status)).toEqual(['done'])
+    // Only once, and only for today's workouts
+    expect(applyWorkoutToTrial(r.state, w.id, TUE, at(TUE, 12)).error).toBeTruthy()
+    expect(applyWorkoutToTrial(s, w.id, WED, at(WED, 12)).error).toBeTruthy()
+  })
+  it('refuses a workout that misses the Trial rules', () => {
+    let s = start()
+    s = log(s, TUE, workout(5, { rpe: undefined }), 9)
+    s = { ...s, xp: 2600, lifetimeXp: 2600, prCount: 1, activeWeeksAtRank: 2 }
+    s = advanceTo({ ...s, questsGeneratedFor: [] }, TUE, at(TUE, 10))
+    const r = applyWorkoutToTrial(s, s.workouts[0].id, TUE, at(TUE, 11))
+    expect(r.error).toMatch(/effort/)
+    expect(r.state.rank).toBe('E')
   })
   it('counts an active week when 75% of planned sessions are done', () => {
     let s = start()
