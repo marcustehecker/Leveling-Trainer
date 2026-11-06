@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { lateLogDays, logLateWorkout, moveWorkoutToDay, logWorkout, questsFor, updateProfile } from '../core/engine'
+import { applyWorkoutToTrial, lateLogDays, logLateWorkout, trialShortfall, moveWorkoutToDay, logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
 import { describeTarget, generatePlan, planDayFor, WORKOUT_TYPES, type PlanDay } from '../core/plan'
 import { addDays, WEEKDAY_SHORT, weekday } from '../core/dates'
@@ -62,7 +62,8 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   const todayPlan = planDayFor(s.profile, s.assessment, today)
   const trial = questsFor(s, today).find((q) => q.type === 'trial' && q.status === 'active')
   const penalty = questsFor(s, today).find((q) => q.type === 'penalty' && q.status === 'active')
-  const loggedToday = s.workouts.filter((w) => w.date === today).length
+  const todayWorkouts = s.workouts.filter((w) => w.date === today)
+  const loggedToday = todayWorkouts.length
   const lateDays = lateLogDays(s, today)
 
   useEffect(() => saveDraft(draft), [draft])
@@ -104,6 +105,30 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
           {(trial || penalty) && (
             <Panel tone={trial ? 'rare' : 'danger'} title={trial ? trial.title : 'Penalty Quest'}>
               <p className="text-sm text-mute">{trial ? trial.objective : penalty!.objective}. Use today's workout or log any session below.</p>
+              {trial && todayWorkouts.length > 0 && (
+                <div className="mt-3 grid gap-2">
+                  <p className="text-xs text-purple-200">Already logged today? Count it for the Trial:</p>
+                  {todayWorkouts.map((w) => {
+                    const why = trialShortfall(w)
+                    return (
+                      <div key={w.id} className="rounded border border-edge/60 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2 text-sm">
+                          <span>{w.title}</span>
+                          <span className="text-xs text-mute">{w.durationMin} min</span>
+                        </div>
+                        {why ? <p className="mt-1 text-xs text-mute">Can't count: this workout {why}.</p> : (
+                          <Btn variant="rare" className="mt-2 w-full" onClick={() => {
+                            const r = applyWorkoutToTrial(s, w.id, today, nowIso())
+                            if (r.error) { onLogged(r.error); return }
+                            update(() => r.state)
+                            onLogged(`${trial.title} cleared with ${w.title}!`)
+                          }}>Use This Workout for the Trial</Btn>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </Panel>
           )}
           {todayPlan ? (

@@ -167,6 +167,9 @@ function arise(s: GameState, id: string, date: DateKey, now: string) {
 }
 
 function checkTrial(s: GameState, date: DateKey, now: string) {
+  // Drop a stale Trial for a rank already reached (older saves could get a duplicate).
+  const next = nextRank(s.rank)
+  s.quests = s.quests.filter((q) => !(q.type === 'trial' && q.status === 'active' && q.trialRank !== next))
   const st = promotionStatus(s)
   if (!st || st.trialUnlocked) return
   if (st.xp.have < st.xp.need || st.weeks.have < st.weeks.need || st.prs.have < st.prs.need) return
@@ -487,8 +490,8 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   const bonus = (planned ? B.PLANNED_WORKOUT_BONUS : 0) + (input.rpe ? B.RPE_BONUS : 0)
   const prXp = Math.min(prs.length, B.MAX_REWARDED_PRS) * B.PR_XP
   const raw = Math.round((base + bonus + prXp) * mult * (1 + workoutBonusPct(s, input) / 100))
-  const xp = raw > 0 ? gainXp(s, today, now, raw, prior > 0 ? `Workout (repeat ×${mult})` : 'Workout logged') : 0
   s.prCount += prs.length
+  const xp = raw > 0 ? gainXp(s, today, now, raw, prior > 0 ? `Workout (repeat ×${mult})` : 'Workout logged') : 0
   if (recordItems.length) ceremony(s, { kind: 'record', items: recordItems })
 
   // Stats
@@ -517,12 +520,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
     const open = q.status === 'active' && (q.expires === null || q.expires >= today)
     if (q.measure === 'workout' && open) {
       if (q.type === 'trial') {
-        if (done.length >= 4 && allDone && input.rpe && q.trialRank) {
-          q.status = 'done'; q.completedOn = today; q.verification = 'Logged'; q.progress = 1
-          gainXp(s, today, now, B.TRIAL_XP, `${q.trialRank}-Rank Trial cleared`, true)
-          completed.push(q.title)
-          promote(s, q.trialRank, today, now)
-        }
+        if (!trialShortfall(input)) { clearTrial(s, q, today, now); completed.push(q.title) }
         continue
       }
       if (q.minMinutes && input.durationMin < q.minMinutes) continue
@@ -577,6 +575,42 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
   checkAchievements(s, today, now)
   return { state: s, result: { ok: true, xp, prs, completed, raid: raidHit } }
+}
+
+/** Why a workout can't clear a Rank Trial, or null if it can. */
+export function trialShortfall(w: WorkoutInput): string | null {
+  const sets = w.exercises.flatMap((e) => e.sets)
+  if (sets.filter((x) => x.done).length < 4) return 'needs at least 4 completed sets'
+  if (sets.some((x) => !x.done)) return 'has sets that were not marked done'
+  if (!w.rpe) return 'has no effort (RPE) recorded'
+  return null
+}
+
+function clearTrial(s: GameState, q: Quest, today: DateKey, now: string) {
+  if (!q.trialRank) return
+  q.status = 'done'; q.completedOn = today; q.verification = 'Logged'; q.progress = 1
+  // Promote first: granting XP re-checks Trial requirements, which would reissue this rank's Trial.
+  promote(s, q.trialRank, today, now)
+  gainXp(s, today, now, B.TRIAL_XP, `${q.trialRank}-Rank Trial cleared`, true)
+}
+
+/**
+ * Count a workout already logged today toward the active Rank Trial (for when the Trial
+ * unlocked after the workout was logged). Only today's workouts, and only once.
+ */
+export function applyWorkoutToTrial(s0: GameState, workoutId: string, today: DateKey, now: string): { state: GameState; error?: string } {
+  const w = s0.workouts.find((x) => x.id === workoutId)
+  if (!w || w.date !== today) return { state: s0, error: "Only a workout logged today can count for the Trial." }
+  const trial = s0.quests.find((q) => q.type === 'trial' && q.status === 'active')
+  if (!trial) return { state: s0, error: 'There is no active Rank Trial.' }
+  const why = trialShortfall(w)
+  if (why) return { state: s0, error: `That workout ${why}.` }
+  const s = clone(s0)
+  const q = s.quests.find((x) => x.id === trial.id)!
+  log(s, today, now, `[SYSTEM] ${w.title} submitted for the ${q.title}.`, 'info')
+  clearTrial(s, q, today, now)
+  checkAchievements(s, today, now)
+  return { state: s }
 }
 
 /**
