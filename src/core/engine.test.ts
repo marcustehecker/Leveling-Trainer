@@ -243,6 +243,20 @@ describe('ranks', () => {
     expect(applyWorkoutToTrial(r.state, w.id, TUE, at(TUE, 12)).error).toBeTruthy()
     expect(applyWorkoutToTrial(s, w.id, WED, at(WED, 12)).error).toBeTruthy()
   })
+  it('lets the player confirm unticked sets were done to clear the Trial', () => {
+    let s = start()
+    const partial = workout(5)
+    partial.exercises[0].sets[4].done = false
+    s = log(s, TUE, partial, 9)
+    s = { ...s, xp: 2600, lifetimeXp: 2600, prCount: 1, activeWeeksAtRank: 2 }
+    s = advanceTo({ ...s, questsGeneratedFor: [] }, TUE, at(TUE, 10))
+    const id = s.workouts[0].id
+    expect(applyWorkoutToTrial(s, id, TUE, at(TUE, 11)).error).toMatch(/not marked done/)
+    const r = applyWorkoutToTrial(s, id, TUE, at(TUE, 11), { markAllDone: true })
+    expect(r.error).toBeUndefined()
+    expect(r.state.rank).toBe('D')
+    expect(r.state.workouts[0].exercises[0].sets.every((x) => x.done)).toBe(true)
+  })
   it('refuses a workout that misses the Trial rules', () => {
     let s = start()
     s = log(s, TUE, workout(5, { rpe: undefined }), 9)
