@@ -110,19 +110,27 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
                   <p className="text-xs text-purple-200">Already logged today? Count it for the Trial:</p>
                   {todayWorkouts.map((w) => {
                     const why = trialShortfall(w)
+                    const unticked = w.exercises.reduce((n, e) => n + e.sets.filter((x) => !x.done).length, 0)
+                    const fixable = !!why && unticked > 0 && !trialShortfall({ ...w, exercises: w.exercises.map((e) => ({ ...e, sets: e.sets.map((x) => ({ ...x, done: true })) })) })
+                    const use = (markAllDone: boolean) => {
+                      const r = applyWorkoutToTrial(s, w.id, today, nowIso(), { markAllDone })
+                      if (r.error) { onLogged(r.error); return }
+                      update(() => r.state)
+                      onLogged(`${trial.title} cleared with ${w.title}!`)
+                    }
                     return (
                       <div key={w.id} className="rounded border border-edge/60 px-3 py-2">
                         <div className="flex items-center justify-between gap-2 text-sm">
                           <span>{w.title}</span>
                           <span className="text-xs text-mute">{w.durationMin} min</span>
                         </div>
-                        {why ? <p className="mt-1 text-xs text-mute">Can't count: this workout {why}.</p> : (
-                          <Btn variant="rare" className="mt-2 w-full" onClick={() => {
-                            const r = applyWorkoutToTrial(s, w.id, today, nowIso())
-                            if (r.error) { onLogged(r.error); return }
-                            update(() => r.state)
-                            onLogged(`${trial.title} cleared with ${w.title}!`)
-                          }}>Use This Workout for the Trial</Btn>
+                        {fixable ? (
+                          <>
+                            <p className="mt-1 text-xs text-mute">{unticked} set{unticked > 1 ? 's were' : ' was'} not ticked as done. If you finished {unticked > 1 ? 'them' : 'it'}, confirm below.</p>
+                            <Btn variant="rare" className="mt-2 w-full" onClick={() => use(true)}>I Did Those Sets: Mark Done &amp; Use for Trial</Btn>
+                          </>
+                        ) : why ? <p className="mt-1 text-xs text-mute">Can't count: this workout {why}.</p> : (
+                          <Btn variant="rare" className="mt-2 w-full" onClick={() => use(false)}>Use This Workout for the Trial</Btn>
                         )}
                       </div>
                     )

@@ -598,15 +598,20 @@ function clearTrial(s: GameState, q: Quest, today: DateKey, now: string) {
  * Count a workout already logged today toward the active Rank Trial (for when the Trial
  * unlocked after the workout was logged). Only today's workouts, and only once.
  */
-export function applyWorkoutToTrial(s0: GameState, workoutId: string, today: DateKey, now: string): { state: GameState; error?: string } {
-  const w = s0.workouts.find((x) => x.id === workoutId)
-  if (!w || w.date !== today) return { state: s0, error: "Only a workout logged today can count for the Trial." }
+export function applyWorkoutToTrial(s0: GameState, workoutId: string, today: DateKey, now: string, opts: { markAllDone?: boolean } = {}): { state: GameState; error?: string } {
+  const w0 = s0.workouts.find((x) => x.id === workoutId)
+  if (!w0 || w0.date !== today) return { state: s0, error: "Only a workout logged today can count for the Trial." }
   const trial = s0.quests.find((q) => q.type === 'trial' && q.status === 'active')
   if (!trial) return { state: s0, error: 'There is no active Rank Trial.' }
+  const s = clone(s0)
+  const w = s.workouts.find((x) => x.id === workoutId)!
+  // The player confirms they finished sets they forgot to tick when logging.
+  const unticked = w.exercises.flatMap((e) => e.sets).filter((x) => !x.done)
+  if (opts.markAllDone) for (const x of unticked) x.done = true
   const why = trialShortfall(w)
   if (why) return { state: s0, error: `That workout ${why}.` }
-  const s = clone(s0)
   const q = s.quests.find((x) => x.id === trial.id)!
+  if (opts.markAllDone && unticked.length) log(s, today, now, `[SYSTEM] ${unticked.length} unticked set${unticked.length > 1 ? 's' : ''} in ${w.title} confirmed as done.`, 'info')
   log(s, today, now, `[SYSTEM] ${w.title} submitted for the ${q.title}.`, 'info')
   clearTrial(s, q, today, now)
   checkAchievements(s, today, now)
