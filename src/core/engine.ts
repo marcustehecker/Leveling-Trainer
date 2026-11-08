@@ -11,6 +11,7 @@ import { isTrainingDay } from './plan'
 import { DAILY_TYPES, generateDailyQuests, penaltyQuest, waterAmount, waterGlasses } from './quests'
 import type {
   Assessment, Ceremony, DateKey, GameState, LogEntry, PersonalRecord, Profile, Quest, RankId, StatId, WorkoutInput, WorkoutLog,
+  Penalty,
 } from './types'
 
 const clone = <T,>(x: T): T => structuredClone(x)
@@ -265,6 +266,8 @@ function closeDay(s: GameState, d: DateKey, now: string) {
   if (planned && !trained && !sick) {
     if (s.streak > 0 && canGuardStreak(s, d)) {
       s.shadowGuardUsed = d
+      const pen = s.penalties[s.penalties.length - 1]
+      if (pen?.date === d) pen.guarded = true
       log(s, d, now, `[SYSTEM] Igris guarded your ${s.streak} day streak. He can do this again in ${SHADOW.GUARD_DAYS} days.`, 'rare')
     } else s.streak = 0
   } else if (!active && !sick && s.inactiveStreak > B.INACTIVITY_GRACE_DAYS) s.streak = 0
@@ -321,7 +324,7 @@ export function createGame(profile: Profile, assessment: Assessment, today: Date
       [assessment.pushups >= 5 ? 'pushup' : 'incline-pushup']: { reps: assessment.pushups, weightKg: 0, seconds: 0, date: today },
       plank: { reps: 0, weightKg: 0, seconds: assessment.plankSeconds, date: today },
     },
-    prCount: 0, sickDays: [], missStreak: 0, inactiveStreak: 0, streak: 0, bestStreak: 0,
+    prCount: 0, sickDays: [], missStreak: 0, inactiveStreak: 0, streak: 0, bestStreak: 0, streakRepair: 1,
     penalties: [], achievements: {}, equippedTitle: null, log: [], ceremonies: [], seq: 0,
     bodyWeights: profile.weightKg ? [{ date: today, kg: Math.round(profile.weightKg * 10) / 10 }] : [],
   }
@@ -332,12 +335,13 @@ export function createGame(profile: Profile, assessment: Assessment, today: Date
 
 /** Close every day before `today` that hasn't been closed, then issue today's quests. */
 export function advanceTo(s0: GameState, today: DateKey, now: string): GameState {
-  if (s0.lastClosedDate >= addDays(today, -1) && s0.questsGeneratedFor.includes(today) && s0.raids?.some((r) => r.week === weekStart(today))) return s0
+  if (s0.streakRepair && s0.lastClosedDate >= addDays(today, -1) && s0.questsGeneratedFor.includes(today) && s0.raids?.some((r) => r.week === weekStart(today))) return s0
   const s = clone(s0)
   for (let d = addDays(s.lastClosedDate, 1); d < today; d = addDays(d, 1)) {
     closeDay(s, d, now)
     s.lastClosedDate = d
   }
+  if (!s.streakRepair) repairRestoredStreak(s, today, now)
   generateFor(s, today)
   checkTrial(s, today, now)
   openRaid(s, today, now)
@@ -674,15 +678,45 @@ function cancelPenalty(s: GameState, day: DateKey, today: DateKey, now: string):
   s.quests = s.quests.filter((q) => q.id !== p.questId)
   s.ceremonies = s.ceremonies.filter((c) => !(c.kind === 'penalty' && c.lost === p.lost))
   s.missStreak = Math.max(0, s.missStreak - 1)
-  // Rebuild the streak as if the day had been logged on time.
-  s.streak = streakBefore(s, today)
+  // Rebuild the streak as if the day had been logged on time. Never lower it.
+  s.streak = Math.max(s.streak, restoredStreak(s, p, today))
   s.bestStreak = Math.max(s.bestStreak, s.streak)
   log(s, today, now, `[SYSTEM] Training found for ${day}. Penalty cancelled: ${back} XP restored and your streak is back to ${s.streak} days.`, 'rare')
   checkAchievements(s, today, now)
   return back
 }
 
-/** Streak length up to (not including) day d, counted back over days that would not have broken it. */
+/**
+ * The streak up to (not including) today if penalty p's day had been trained: the streak saved
+ * when the miss happened, plus one for every day since, reset only by a later miss that still
+ * stands. This uses what actually happened, so later schedule edits can't shorten it.
+ */
+function restoredStreak(s: GameState, p: Penalty, today: DateKey): number {
+  if (p.streakBefore === undefined) return streakBefore(s, today)
+  let n = p.streakBefore
+  for (let k = p.date; k < today && k <= s.lastClosedDate; k = addDays(k, 1)) {
+    const broke = k !== p.date && s.penalties.some((x) => x.date === k && !x.cancelled && !x.guarded && s.shadowGuardUsed !== k)
+    n = broke ? 0 : n + 1
+  }
+  return n
+}
+
+/**
+ * Saves hurt by the old restore (it recounted history with the current schedule, so adding a
+ * training day could cut a long streak short). Runs once per save.
+ */
+function repairRestoredStreak(s: GameState, today: DateKey, now: string) {
+  s.streakRepair = 1
+  const p = [...s.penalties].reverse().find((x) => x.cancelled && x.streakBefore !== undefined)
+  if (!p || daysBetween(p.date, today) > 60) return
+  const want = restoredStreak(s, p, today)
+  if (want <= s.streak) return
+  log(s, today, now, `[SYSTEM] Streak corrected: ${s.streak} → ${want} days. A schedule change had cut it short.`, 'rare')
+  s.streak = want
+  s.bestStreak = Math.max(s.bestStreak, want)
+}
+
+/** Streak length up to (not including) day d, counted back over days that would not have broken it. Fallback for old saves. */
 function streakBefore(s: GameState, d: DateKey): number {
   let n = 0
   for (let k = addDays(d, -1); k >= s.createdDate; k = addDays(k, -1)) {

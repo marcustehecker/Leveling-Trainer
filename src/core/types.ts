@@ -131,6 +131,8 @@ export interface Penalty {
   streakBefore?: number
   /** The day turned out to have training, so the penalty was undone in full. */
   cancelled?: boolean
+  /** Igris saved the streak that day, so it never reset. */
+  guarded?: boolean
 }
 
 export type Ceremony =
@@ -183,6 +185,8 @@ export interface GameState {
   missStreak: number
   inactiveStreak: number
   streak: number
+  /** Set once the one-time streak correction has run on this save. */
+  streakRepair?: number
   bestStreak: number
   penalties: Penalty[]
   achievements: Record<string, DateKey>

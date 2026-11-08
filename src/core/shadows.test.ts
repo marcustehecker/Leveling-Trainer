@@ -102,3 +102,56 @@ describe('moving a workout to a missed day', () => {
     expect(moveWorkoutToDay(r.state, id, wed, thu, at(thu, 12)).error).toBeTruthy()
   })
 })
+
+describe('streak restore after a schedule change', () => {
+  it('keeps the streak when a late log follows a routine edit that added training days', async () => {
+    const { logLateWorkout, moveWorkoutToDay, updateProfile } = await import('./engine')
+    // Three weeks of Mon/Wed/Fri training: the streak grows every day.
+    let s = start()
+    for (let i = 0; i < 21; i++) {
+      const d = addDays(MON, i)
+      s = advanceTo(s, d, at(d, 8))
+      if ([1, 3, 5].includes(new Date(d + 'T12:00:00Z').getUTCDay())) s = logWorkout(s, pushups(), d, at(d)).state
+    }
+    // Then the player adds Sunday and Tuesday to the routine (past Sundays/Tuesdays were rest days).
+    const today0 = addDays(MON, 21)
+    s = advanceTo(s, today0, at(today0, 8))
+    s = updateProfile(s, { trainingDays: [0, 1, 2, 3, 5] }, undefined, today0, at(today0, 9))
+    s = logWorkout(s, pushups(), today0, at(today0)).state
+    const streak = s.streak
+    expect(streak).toBeGreaterThanOrEqual(20)
+    // Tuesday (now planned) is missed: the streak resets.
+    const tue = addDays(today0, 1), wed = addDays(today0, 2)
+    s = advanceTo(s, wed, at(wed, 8))
+    expect(s.streak).toBe(0)
+    // Logging Tuesday late should bring the whole streak back (+ Monday and Tuesday), not stop at an old rest day.
+    const late = logLateWorkout(s, pushups(), tue, wed, at(wed))
+    expect(late.result.ok).toBe(true)
+    expect(late.state.streak).toBe(streak + 2)
+    // Same for moving today's workout back to Tuesday.
+    const t = logWorkout(s, pushups(), wed, at(wed)).state
+    const moved = moveWorkoutToDay(t, t.workouts[0].id, tue, wed, at(wed, 11))
+    expect(moved.error).toBeUndefined()
+    expect(moved.state.streak).toBe(streak + 2)
+  })
+
+  it('fixes a save whose streak was already cut short by the old restore, once', () => {
+    let s = start()
+    for (let i = 0; i < 14; i++) {
+      const d = addDays(MON, i)
+      s = advanceTo(s, d, at(d, 8))
+      if ([1, 3, 5].includes(new Date(d + 'T12:00:00Z').getUTCDay())) s = logWorkout(s, pushups(), d, at(d)).state
+    }
+    const today = addDays(MON, 14)
+    s = advanceTo(s, today, at(today, 8))
+    // A cancelled penalty from 4 days ago with an 8-day streak before it, but the old code left the streak at 2.
+    const day = addDays(today, -4)
+    const broken: GameState = { ...s, streak: 2, streakRepair: undefined, penalties: [{ id: 'p1', date: day, lost: 10, refunded: true, questId: 'q', streakBefore: 8, cancelled: true }] }
+    const fixed = advanceTo(broken, today, at(today, 9))
+    expect(fixed.streak).toBe(12)
+    expect(fixed.streakRepair).toBe(1)
+    // Runs once only, and never lowers a correct streak.
+    expect(advanceTo({ ...fixed, streak: 3 }, today, at(today, 10)).streak).toBe(3)
+    expect(advanceTo({ ...broken, streak: 20 }, today, at(today, 10)).streak).toBe(20)
+  })
+})
