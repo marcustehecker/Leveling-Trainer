@@ -11,6 +11,7 @@ import { isTrainingDay } from './plan'
 import { DAILY_TYPES, generateDailyQuests, penaltyQuest, waterAmount, waterGlasses } from './quests'
 import type {
   Assessment, Ceremony, DateKey, GameState, LogEntry, PersonalRecord, Profile, Quest, RankId, StatId, WorkoutInput, WorkoutLog,
+  Penalty,
 } from './types'
 
 const clone = <T,>(x: T): T => structuredClone(x)
@@ -221,6 +222,16 @@ function workoutsOn(s: GameState, d: DateKey) {
   return s.workouts.filter((w) => w.date === d)
 }
 
+/**
+ * Whether d was a planned training day under the schedule in effect at the time. Days already
+ * closed are judged by what the System recorded then (a penalty, or a workout logged as planned),
+ * so editing the routine later never turns old rest days into misses. Open days use the current schedule.
+ */
+export function wasPlannedDay(s: GameState, d: DateKey): boolean {
+  if (d > s.lastClosedDate) return isTrainingDay(s.profile, d)
+  return s.penalties.some((p) => p.date === d) || workoutsOn(s, d).some((w) => w.planned)
+}
+
 function wasActive(s: GameState, d: DateKey) {
   return workoutsOn(s, d).length > 0 || s.quests.some((q) => q.completedOn === d)
 }
@@ -265,6 +276,8 @@ function closeDay(s: GameState, d: DateKey, now: string) {
   if (planned && !trained && !sick) {
     if (s.streak > 0 && canGuardStreak(s, d)) {
       s.shadowGuardUsed = d
+      const pen = s.penalties[s.penalties.length - 1]
+      if (pen?.date === d) pen.guarded = true
       log(s, d, now, `[SYSTEM] Igris guarded your ${s.streak} day streak. He can do this again in ${SHADOW.GUARD_DAYS} days.`, 'rare')
     } else s.streak = 0
   } else if (!active && !sick && s.inactiveStreak > B.INACTIVITY_GRACE_DAYS) s.streak = 0
@@ -272,7 +285,7 @@ function closeDay(s: GameState, d: DateKey, now: string) {
   s.bestStreak = Math.max(s.bestStreak, s.streak)
 
   if (weekday(d) === 0) {
-    const days = range(weekStart(d), d).filter((k) => (k > s.createdDate || workoutsOn(s, k).length > 0) && k >= s.createdDate && isTrainingDay(s.profile, k) && !s.sickDays.includes(k))
+    const days = range(weekStart(d), d).filter((k) => (k > s.createdDate || workoutsOn(s, k).length > 0) && k >= s.createdDate && wasPlannedDay(s, k) && !s.sickDays.includes(k))
     const done = days.filter((k) => workoutsOn(s, k).length > 0).length
     if (days.length > 0 && done / days.length >= B.ACTIVE_WEEK_RATIO) {
       s.activeWeeksAtRank += 1
@@ -321,7 +334,7 @@ export function createGame(profile: Profile, assessment: Assessment, today: Date
       [assessment.pushups >= 5 ? 'pushup' : 'incline-pushup']: { reps: assessment.pushups, weightKg: 0, seconds: 0, date: today },
       plank: { reps: 0, weightKg: 0, seconds: assessment.plankSeconds, date: today },
     },
-    prCount: 0, sickDays: [], missStreak: 0, inactiveStreak: 0, streak: 0, bestStreak: 0,
+    prCount: 0, sickDays: [], missStreak: 0, inactiveStreak: 0, streak: 0, bestStreak: 0, streakRepair: 1,
     penalties: [], achievements: {}, equippedTitle: null, log: [], ceremonies: [], seq: 0,
     bodyWeights: profile.weightKg ? [{ date: today, kg: Math.round(profile.weightKg * 10) / 10 }] : [],
   }
@@ -332,12 +345,13 @@ export function createGame(profile: Profile, assessment: Assessment, today: Date
 
 /** Close every day before `today` that hasn't been closed, then issue today's quests. */
 export function advanceTo(s0: GameState, today: DateKey, now: string): GameState {
-  if (s0.lastClosedDate >= addDays(today, -1) && s0.questsGeneratedFor.includes(today) && s0.raids?.some((r) => r.week === weekStart(today))) return s0
+  if (s0.streakRepair && s0.lastClosedDate >= addDays(today, -1) && s0.questsGeneratedFor.includes(today) && s0.raids?.some((r) => r.week === weekStart(today))) return s0
   const s = clone(s0)
   for (let d = addDays(s.lastClosedDate, 1); d < today; d = addDays(d, 1)) {
     closeDay(s, d, now)
     s.lastClosedDate = d
   }
+  if (!s.streakRepair) repairRestoredStreak(s, today, now)
   generateFor(s, today)
   checkTrial(s, today, now)
   openRaid(s, today, now)
@@ -462,7 +476,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   const s = clone(s0)
   const prior = workoutsOn(s, today).length
   const mult = B.REPEAT_WORKOUT_MULTIPLIER[Math.min(prior, B.REPEAT_WORKOUT_MULTIPLIER.length - 1)]
-  const planned = isTrainingDay(s.profile, today) && prior === 0
+  const planned = (opts.late ? wasPlannedDay(s, today) : isTrainingDay(s.profile, today)) && prior === 0
 
   // Personal records
   const prs: string[] = []
@@ -470,7 +484,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   for (const e of input.exercises) {
     const ex = EXERCISE_BY_ID[e.exerciseId]
     const sets = e.sets.filter((x) => x.done)
-    if (!ex || sets.length === 0) continue
+    if (!ex || sets.length === 0 || input.quick) continue
     const rec = s.records[e.exerciseId]
     if (ex.kind === 'time') {
       const best = Math.max(...sets.map((x) => x.seconds ?? 0))
@@ -539,7 +553,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
         maybeBonus(s, q, today, now)
       }
     } else if (q.measure === 'weeklyWorkouts' && open && q.expires) {
-      const days = range(q.date, q.expires).filter((k) => k <= today && isTrainingDay(s.profile, k) && workoutsOn(s, k).length > 0)
+      const days = range(q.date, q.expires).filter((k) => k <= today && wasPlannedDay(s, k) && workoutsOn(s, k).length > 0)
       q.progress = days.length
       if (q.progress >= q.target) { completeQuest(s, q, today, now, 'Logged'); completed.push(q.title) }
     }
@@ -579,6 +593,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
 /** Why a workout can't clear a Rank Trial, or null if it can. */
 export function trialShortfall(w: WorkoutInput): string | null {
+  if (w.quick) return 'was a Quick Log with no sets recorded'
   const sets = w.exercises.flatMap((e) => e.sets)
   if (sets.filter((x) => x.done).length < 4) return 'needs at least 4 completed sets'
   if (sets.some((x) => !x.done)) return 'has sets that were not marked done'
@@ -619,8 +634,8 @@ export function applyWorkoutToTrial(s0: GameState, workoutId: string, today: Dat
 }
 
 /**
- * Days a forgotten workout can still be logged for: the last 2 days, on or after registration,
- * not sick and with nothing logged. Newest first. Two days covers logging just after midnight.
+ * Days a forgotten workout can still be logged for: the last LATE_LOG_DAYS days, on or after
+ * registration, not sick and with nothing logged. Newest first.
  */
 export function lateLogDays(s: GameState, today: DateKey): DateKey[] {
   return Array.from({ length: B.LATE_LOG_DAYS }, (_, i) => addDays(today, -1 - i))
@@ -635,8 +650,16 @@ export function lateLogDays(s: GameState, today: DateKey): DateKey[] {
 export function logLateWorkout(s0: GameState, input: WorkoutInput, day: DateKey, today: DateKey, now: string): { state: GameState; result: LogResult & { restored?: number } } {
   if (!lateLogDays(s0, today).includes(day)) return { state: s0, result: { ok: false, reason: `Only the last ${B.LATE_LOG_DAYS} days can be logged late, and only if nothing was logged that day.` } }
   if (input.durationMin < B.LATE_LOG_MIN_MINUTES) return { state: s0, result: { ok: false, reason: `A late workout needs at least ${B.LATE_LOG_MIN_MINUTES} minutes.` } }
-  const r = logWorkout(s0, input, day, now, { late: true })
-  if (!r.result.ok) return r
+  // Quests this workout would have finished on time get another chance: that day's training quest
+  // and the weekly objective. Whatever it doesn't finish goes back to failed.
+  const pre = clone(s0)
+  const revived = pre.quests.filter((q) => q.status === 'failed' && !q.completedOn && q.date <= day && q.expires !== null && q.expires >= day &&
+    ((q.measure === 'workout' && q.type !== 'trial' && q.type !== 'penalty') || q.measure === 'weeklyWorkouts'))
+  for (const q of revived) q.status = 'active'
+  const r = logWorkout(pre, input, day, now, { late: true })
+  if (!r.result.ok) return { state: s0, result: r.result }
+  const ids = new Set(revived.map((q) => q.id))
+  for (const q of r.state.quests) if (ids.has(q.id) && q.status === 'active' && q.expires !== null && q.expires < today) q.status = 'failed'
   const restored = cancelPenalty(r.state, day, today, now)
   return { state: r.state, result: restored === null ? r.result : { ...r.result, restored } }
 }
@@ -655,7 +678,7 @@ export function moveWorkoutToDay(s0: GameState, workoutId: string, day: DateKey,
   const mw = s.workouts.find((x) => x.id === workoutId)!
   mw.date = day
   mw.late = true
-  mw.planned = isTrainingDay(s.profile, day)
+  mw.planned = true // the day has a penalty, so it was a planned day
   s.workouts.sort((a, b) => b.date.localeCompare(a.date) || b.loggedAt.localeCompare(a.loggedAt))
   log(s, today, now, `[SYSTEM] ${mw.title} moved to ${day}.`, 'info')
   const restored = cancelPenalty(s, day, today, now) ?? 0
@@ -674,19 +697,49 @@ function cancelPenalty(s: GameState, day: DateKey, today: DateKey, now: string):
   s.quests = s.quests.filter((q) => q.id !== p.questId)
   s.ceremonies = s.ceremonies.filter((c) => !(c.kind === 'penalty' && c.lost === p.lost))
   s.missStreak = Math.max(0, s.missStreak - 1)
-  // Rebuild the streak as if the day had been logged on time.
-  s.streak = streakBefore(s, today)
+  // Rebuild the streak as if the day had been logged on time. Never lower it.
+  s.streak = Math.max(s.streak, restoredStreak(s, p, today))
   s.bestStreak = Math.max(s.bestStreak, s.streak)
   log(s, today, now, `[SYSTEM] Training found for ${day}. Penalty cancelled: ${back} XP restored and your streak is back to ${s.streak} days.`, 'rare')
   checkAchievements(s, today, now)
   return back
 }
 
-/** Streak length up to (not including) day d, counted back over days that would not have broken it. */
+/**
+ * The streak up to (not including) today if penalty p's day had been trained: the streak saved
+ * when the miss happened, plus one for every day since, reset only by a later miss that still
+ * stands. This uses what actually happened, so later schedule edits can't shorten it.
+ */
+function restoredStreak(s: GameState, p: Penalty, today: DateKey): number {
+  if (p.streakBefore === undefined) return streakBefore(s, today)
+  let n = p.streakBefore
+  for (let k = p.date; k < today && k <= s.lastClosedDate; k = addDays(k, 1)) {
+    const broke = k !== p.date && s.penalties.some((x) => x.date === k && !x.cancelled && !x.guarded && s.shadowGuardUsed !== k)
+    n = broke ? 0 : n + 1
+  }
+  return n
+}
+
+/**
+ * Saves hurt by the old restore (it recounted history with the current schedule, so adding a
+ * training day could cut a long streak short). Runs once per save.
+ */
+function repairRestoredStreak(s: GameState, today: DateKey, now: string) {
+  s.streakRepair = 1
+  const p = [...s.penalties].reverse().find((x) => x.cancelled && x.streakBefore !== undefined)
+  if (!p || daysBetween(p.date, today) > 60) return
+  const want = restoredStreak(s, p, today)
+  if (want <= s.streak) return
+  log(s, today, now, `[SYSTEM] Streak corrected: ${s.streak} → ${want} days. A schedule change had cut it short.`, 'rare')
+  s.streak = want
+  s.bestStreak = Math.max(s.bestStreak, want)
+}
+
+/** Streak length up to (not including) day d, counted back over days that would not have broken it. Fallback for old saves. */
 function streakBefore(s: GameState, d: DateKey): number {
   let n = 0
   for (let k = addDays(d, -1); k >= s.createdDate; k = addDays(k, -1)) {
-    const missed = isTrainingDay(s.profile, k) && k !== s.createdDate && workoutsOn(s, k).length === 0 && !s.sickDays.includes(k)
+    const missed = s.penalties.some((p) => p.date === k && !p.cancelled && !p.guarded)
     if (missed && s.shadowGuardUsed !== k) break
     n++
   }

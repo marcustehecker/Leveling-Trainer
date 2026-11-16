@@ -22,8 +22,8 @@ export const PROMOTION: Record<Exclude<RankId, 'E'>, { activeWeeks: number; prs:
 
 export const ACTIVE_WEEK_RATIO = 0.75
 export const DEMOTION_WARNING_DAYS = 7
-/** How many past days a forgotten workout can be logged for. */
-export const LATE_LOG_DAYS = 2
+/** How many past days a forgotten workout can be logged for. A week covers a weekend you forgot about. */
+export const LATE_LOG_DAYS = 7
 /** Shortest workout that can be logged late. */
 export const LATE_LOG_MIN_MINUTES = 10
 /** Days between body weight updates. */

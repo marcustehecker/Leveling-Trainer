@@ -102,3 +102,137 @@ describe('moving a workout to a missed day', () => {
     expect(moveWorkoutToDay(r.state, id, wed, thu, at(thu, 12)).error).toBeTruthy()
   })
 })
+
+describe('streak restore after a schedule change', () => {
+  it('keeps the streak when a late log follows a routine edit that added training days', async () => {
+    const { logLateWorkout, moveWorkoutToDay, updateProfile } = await import('./engine')
+    // Three weeks of Mon/Wed/Fri training: the streak grows every day.
+    let s = start()
+    for (let i = 0; i < 21; i++) {
+      const d = addDays(MON, i)
+      s = advanceTo(s, d, at(d, 8))
+      if ([1, 3, 5].includes(new Date(d + 'T12:00:00Z').getUTCDay())) s = logWorkout(s, pushups(), d, at(d)).state
+    }
+    // Then the player adds Sunday and Tuesday to the routine (past Sundays/Tuesdays were rest days).
+    const today0 = addDays(MON, 21)
+    s = advanceTo(s, today0, at(today0, 8))
+    s = updateProfile(s, { trainingDays: [0, 1, 2, 3, 5] }, undefined, today0, at(today0, 9))
+    s = logWorkout(s, pushups(), today0, at(today0)).state
+    const streak = s.streak
+    expect(streak).toBeGreaterThanOrEqual(20)
+    // Tuesday (now planned) is missed: the streak resets.
+    const tue = addDays(today0, 1), wed = addDays(today0, 2)
+    s = advanceTo(s, wed, at(wed, 8))
+    expect(s.streak).toBe(0)
+    // Logging Tuesday late should bring the whole streak back (+ Monday and Tuesday), not stop at an old rest day.
+    const late = logLateWorkout(s, pushups(), tue, wed, at(wed))
+    expect(late.result.ok).toBe(true)
+    expect(late.state.streak).toBe(streak + 2)
+    // Same for moving today's workout back to Tuesday.
+    const t = logWorkout(s, pushups(), wed, at(wed)).state
+    const moved = moveWorkoutToDay(t, t.workouts[0].id, tue, wed, at(wed, 11))
+    expect(moved.error).toBeUndefined()
+    expect(moved.state.streak).toBe(streak + 2)
+  })
+
+  it('fixes a save whose streak was already cut short by the old restore, once', () => {
+    let s = start()
+    for (let i = 0; i < 14; i++) {
+      const d = addDays(MON, i)
+      s = advanceTo(s, d, at(d, 8))
+      if ([1, 3, 5].includes(new Date(d + 'T12:00:00Z').getUTCDay())) s = logWorkout(s, pushups(), d, at(d)).state
+    }
+    const today = addDays(MON, 14)
+    s = advanceTo(s, today, at(today, 8))
+    // A cancelled penalty from 4 days ago with an 8-day streak before it, but the old code left the streak at 2.
+    const day = addDays(today, -4)
+    const broken: GameState = { ...s, streak: 2, streakRepair: undefined, penalties: [{ id: 'p1', date: day, lost: 10, refunded: true, questId: 'q', streakBefore: 8, cancelled: true }] }
+    const fixed = advanceTo(broken, today, at(today, 9))
+    expect(fixed.streak).toBe(12)
+    expect(fixed.streakRepair).toBe(1)
+    // Runs once only, and never lowers a correct streak.
+    expect(advanceTo({ ...fixed, streak: 3 }, today, at(today, 10)).streak).toBe(3)
+    expect(advanceTo({ ...broken, streak: 20 }, today, at(today, 10)).streak).toBe(20)
+  })
+})
+
+describe('late logging a weekend workout days later', () => {
+  it('logs Saturday on the following Wednesday with the same streak and XP as logging it on time', async () => {
+    const { logLateWorkout, lateLogDays } = await import('./engine')
+    const p6: Profile = { ...profile, trainingDays: [1, 3, 5, 6] }
+    const base = advanceTo(createGame(p6, { pushups: 20, plankSeconds: 40, cardioLevel: 3, mobilityLevel: 2 }, MON, at(MON, 8)), MON, at(MON, 8))
+    const sat = addDays(MON, 5), mon2 = addDays(MON, 7), wed2 = addDays(MON, 9)
+    const run = (logSat: boolean) => {
+      let s = base
+      for (let d = MON; d <= addDays(MON, 9); d = addDays(d, 1)) {
+        s = advanceTo(s, d, at(d, 8))
+        if (p6.trainingDays.includes(new Date(`${d}T12:00:00`).getDay()) && (logSat || d !== sat)) s = logWorkout(s, pushups(), d, at(d)).state
+      }
+      return advanceTo(s, addDays(wed2, 0), at(wed2, 20))
+    }
+    const onTime = run(true)
+    const forgot = run(false)
+    expect(forgot.penalties.some((p) => p.date === sat && !p.cancelled)).toBe(true)
+    expect(forgot.streak).toBeLessThan(onTime.streak)
+    expect(lateLogDays(forgot, wed2)).toContain(sat)
+    expect(lateLogDays(forgot, mon2)).toContain(sat)
+    const r = logLateWorkout(forgot, pushups(), sat, wed2, at(wed2, 21))
+    expect(r.result.ok).toBe(true)
+    expect(r.state.streak).toBe(onTime.streak)
+    expect(r.state.xp).toBe(onTime.xp)
+    expect(r.state.workouts.find((w) => w.date === sat)!.planned).toBe(true)
+  })
+})
+
+describe('changing the weekly routine', () => {
+  it('judges past days by the schedule in effect then', async () => {
+    const { updateProfile, wasPlannedDay } = await import('./engine')
+    // Two weeks of Mon/Wed/Fri, all trained.
+    let s = start()
+    for (let d = MON; d < addDays(MON, 14); d = addDays(d, 1)) {
+      s = advanceTo(s, d, at(d, 8))
+      if ([1, 3, 5].includes(new Date(`${d}T12:00:00`).getDay())) s = logWorkout(s, pushups(), d, at(d)).state
+    }
+    const today = addDays(MON, 14)
+    s = advanceTo(s, today, at(today, 8))
+    const streak = s.streak, xp = s.xp, pens = s.penalties.length
+    // Switch to a Tue/Thu/Sat/Sun split.
+    s = updateProfile(s, { trainingDays: [0, 2, 4, 6] }, undefined, today, at(today, 9))
+    // Old Tuesdays and weekends weren't training days back then, so they aren't misses.
+    for (const d of [addDays(MON, 1), addDays(MON, 5), addDays(MON, 6), addDays(MON, 8)]) expect(wasPlannedDay(s, d)).toBe(false)
+    // Old Mon/Wed/Fri were.
+    for (const d of [MON, addDays(MON, 2), addDays(MON, 9)]) expect(wasPlannedDay(s, d)).toBe(true)
+    // Nothing about the past changes.
+    expect(s.streak).toBe(streak)
+    expect(s.xp).toBe(xp)
+    expect(s.penalties.length).toBe(pens)
+    // The next days follow the new routine: Tuesday is planned and missing it is a miss.
+    const wed = addDays(today, 2)
+    s = advanceTo(s, wed, at(wed, 8))
+    expect(s.penalties.map((p) => p.date)).toEqual([addDays(today, 1)])
+    expect(wasPlannedDay(s, addDays(today, 1))).toBe(true)
+  })
+})
+
+describe('quick log', () => {
+  it('logs a leg day without sets: XP and the day count, no records, trial or raid damage', async () => {
+    const { quickWorkout } = await import('./plan')
+    const { logLateWorkout, trialShortfall } = await import('./engine')
+    const q = quickWorkout(profile, { pushups: 20, plankSeconds: 40, cardioLevel: 3, mobilityLevel: 2 }, 'lower', 50)
+    expect(q.title).toBe('Lower Body')
+    expect(q.exercises.length).toBeGreaterThan(0)
+    expect(trialShortfall(q)).toBeTruthy()
+    const s0 = start()
+    const r = logWorkout(s0, q, MON, at(MON))
+    expect(r.result.ok && r.result.xp).toBeGreaterThan(0)
+    expect(r.result.ok && r.result.prs).toEqual([])
+    expect(r.state.records).toEqual(s0.records)
+    expect(r.result.ok ? r.result.raid?.damage ?? 0 : -1).toBe(0)
+    // Works for a missed day too: the penalty is cancelled.
+    const wed = addDays(MON, 2), thu = addDays(MON, 3)
+    const s = advanceTo(r.state, thu, at(thu, 8))
+    const late = logLateWorkout(s, q, wed, thu, at(thu))
+    expect(late.result.ok).toBe(true)
+    expect(late.state.penalties.find((p) => p.date === wed)!.cancelled).toBe(true)
+  })
+})
