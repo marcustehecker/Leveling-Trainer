@@ -79,7 +79,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   if (draft) {
     return <Logger s={s} draft={draft} setDraft={setDraft} onSubmit={(input) => {
       if (draft.forDate) {
-        if (!lateLogDays(s, today).includes(draft.forDate)) { setDraft(null); return 'That day can no longer be logged late.' }
+        if (!lateLogDays(s, today).includes(draft.forDate)) return `That day is more than ${LATE_LOG_DAYS} days ago and can no longer be logged late. Your sets are kept: use Discard if you don't need them.`
         const late = logLateWorkout(s, input, draft.forDate, today, nowIso())
         if (!late.result.ok) return late.result.reason
         update(() => late.state)
