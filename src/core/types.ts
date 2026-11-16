@@ -93,6 +93,8 @@ export interface WorkoutInput {
   exercises: LoggedExercise[]
   durationMin: number
   rpe?: number
+  /** Logged with Quick Log: the exercises are listed but no reps, weights or times were entered. */
+  quick?: boolean
 }
 
 export interface WorkoutLog extends WorkoutInput {

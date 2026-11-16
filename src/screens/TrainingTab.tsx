@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { applyWorkoutToTrial, lateLogDays, logLateWorkout, trialShortfall, moveWorkoutToDay, logWorkout, questsFor, updateProfile } from '../core/engine'
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise } from '../core/exercises'
-import { describeTarget, generatePlan, planDayFor, WORKOUT_TYPES, type PlanDay } from '../core/plan'
+import { describeTarget, generatePlan, planDayFor, quickWorkout, typeOfPlan, WORKOUT_TYPES, type PlanDay } from '../core/plan'
 import { addDays, WEEKDAY_SHORT, weekday } from '../core/dates'
 import type { GameState, LoggedExercise, WorkoutInput, WorkoutType } from '../core/types'
 import { Btn, Panel, Tag } from '../ui/components'
@@ -67,7 +67,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
   const lateDays = lateLogDays(s, today)
   // A missed day that can still be fixed goes to the top so it's the first thing seen.
   const lateMissed = lateDays.some((d) => s.penalties.some((p) => p.date === d && !p.cancelled))
-  const latePanel = <LatePanel s={s} days={lateDays} today={today} start={setDraft} move={(id, day) => {
+  const latePanel = <LatePanel s={s} days={lateDays} today={today} start={setDraft} quick={submit} move={(id, day) => {
     const r = moveWorkoutToDay(s, id, day, today, nowIso())
     if (r.error) { onLogged(r.error); return }
     update(() => r.state)
@@ -76,11 +76,11 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
 
   useEffect(() => saveDraft(draft), [draft])
 
-  if (draft) {
-    return <Logger s={s} draft={draft} setDraft={setDraft} onSubmit={(input) => {
-      if (draft.forDate) {
-        if (!lateLogDays(s, today).includes(draft.forDate)) return `That day is more than ${LATE_LOG_DAYS} days ago and can no longer be logged late. Your sets are kept: use Discard if you don't need them.`
-        const late = logLateWorkout(s, input, draft.forDate, today, nowIso())
+  /** Log a workout for today, or for an earlier day when forDate is set. Returns an error message or null. */
+  function submit(input: WorkoutInput, forDate?: string): string | null {
+      if (forDate) {
+        if (!lateLogDays(s, today).includes(forDate)) return `That day is more than ${LATE_LOG_DAYS} days ago and can no longer be logged late. Your sets are kept: use Discard if you don't need them.`
+        const late = logLateWorkout(s, input, forDate, today, nowIso())
         if (!late.result.ok) return late.result.reason
         update(() => late.state)
         setDraft(null)
@@ -95,7 +95,10 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
       const raidMsg = !r ? '' : r.cleared ? ` · Raid cleared: ${r.boss} defeated!` : r.damage > 0 ? ` · Raid: ${r.damage} damage to ${r.boss} (${r.left} left)` : ` · ${r.blocked}`
       onLogged(`+${result.xp} XP${result.prs.length ? ` · New record: ${result.prs.join(', ')}` : ''}${raidMsg}`)
       return null
-    }} />
+  }
+
+  if (draft) {
+    return <Logger s={s} draft={draft} setDraft={setDraft} onSubmit={(input) => submit(input, draft.forDate)} />
   }
 
   return (
@@ -159,6 +162,7 @@ export function TrainingTab({ s, update, onLogged }: { s: GameState; update: (fn
             </Panel>
           )}
           <Btn variant="ghost" onClick={() => setDraft({ title: 'Custom Session', startedAt: Date.now(), exercises: [] })}>Log a Custom Session</Btn>
+          <QuickLog s={s} day={today} onLog={(input) => submit(input)} />
           {lateDays.length > 0 && !lateMissed && latePanel}
           {editing ? <RoutineEditor s={s} onClose={() => setEditing(false)} onSave={(trainingDays, routine) => {
             update((x) => updateProfile(x, { trainingDays, routine }, undefined, today, nowIso()))
@@ -470,7 +474,7 @@ function History({ s }: { s: GameState }) {
             <div className="mt-2 grid gap-1 text-xs text-mute">
               <div>{w.durationMin} min{w.rpe ? ` · effort ${w.rpe}/10` : ''}{w.planned ? ' · planned' : ''}</div>
               {w.prs.length > 0 && <div className="text-rare">New records: {w.prs.join(', ')}</div>}
-              {w.exercises.map((e, i) => (
+              {w.quick ? <div>Quick Log: {w.exercises.map((e) => e.name).join(', ')} (no sets recorded)</div> : w.exercises.map((e, i) => (
                 <div key={i}><span className="text-ink">{e.name}</span>: {e.sets.filter((x) => x.done).map((x) => x.seconds ? `${x.seconds}s` : `${x.reps}${x.weightKg ? `×${toDisplayWeight(x.weightKg, units)}${weightUnit(units)}` : ''}`).join(', ') || 'skipped'}</div>
               ))}
             </div>
@@ -482,7 +486,7 @@ function History({ s }: { s: GameState }) {
 }
 
 /** Lets the player add a workout they forgot to log on one of the last few days. */
-function LatePanel({ s, days, today, start, move }: { s: GameState; days: string[]; today: string; start: (d: Draft) => void; move: (workoutId: string, day: string) => void }) {
+function LatePanel({ s, days, today, start, quick, move }: { s: GameState; days: string[]; today: string; start: (d: Draft) => void; quick: (input: WorkoutInput, forDate: string) => string | null; move: (workoutId: string, day: string) => void }) {
   const todays = s.workouts.filter((w) => w.date === today)
   const isMissed = (d: string) => s.penalties.some((p) => p.date === d && !p.cancelled)
   const missedDays = days.filter(isMissed)
@@ -501,6 +505,7 @@ function LatePanel({ s, days, today, start, move }: { s: GameState; days: string
           <Btn key={w.id} variant="rare" onClick={() => { if (confirm(`Move "${w.title}" from today to ${label(d)}? Its XP stays the same and ${label(d)}'s penalty is cancelled.`)) move(w.id, d) }}>Move Today's {w.title} Here</Btn>
         ))}
         <Btn variant="ghost" onClick={() => start({ title: `Session (${label(d)})`, startedAt: Date.now(), exercises: [], forDate: d })}>Log a Custom Session</Btn>
+        <QuickLog key={d} s={s} day={d} onLog={(input) => quick({ ...input, title: `${input.title} (${label(d)})` }, d)} />
       </div>
     )
   }
@@ -529,3 +534,47 @@ function LatePanel({ s, days, today, start, move }: { s: GameState; days: string
     </Panel>
   )
 }
+
+/** Log a workout without entering any sets: pick the type and the minutes, done. */
+function QuickLog({ s, day, onLog }: { s: GameState; day: string; onLog: (input: WorkoutInput) => string | null }) {
+  const plan = planDayFor(s.profile, s.assessment, day)
+  const [open, setOpen] = useState(false)
+  const [type, setType] = useState<Exclude<WorkoutType, 'auto'>>(plan ? typeOfPlan(plan) : 'lower')
+  const [minutes, setMinutes] = useState(String(s.profile.sessionMinutes))
+  const [error, setError] = useState<string | null>(null)
+  if (!open) return <Btn variant="ghost" onClick={() => setOpen(true)}>Quick Log (No Sets)</Btn>
+  const go = () => {
+    const min = Math.round(Number(minutes))
+    if (!(min > 0)) { setError('Enter how many minutes you trained.'); return }
+    const err = onLog(quickWorkout(s.profile, s.assessment, type, min))
+    if (err) setError(err)
+    else setOpen(false)
+  }
+  return (
+    <div className="grid gap-2 rounded border border-edge/60 p-2">
+      <div className="sys-title text-xs text-glow">Quick Log</div>
+      <p className="text-[11px] text-mute">Did the workout but didn't track sets? Log it here. You get workout XP and the day counts, but no records, Rank Trial or raid damage.</p>
+      <div className="grid grid-cols-2 gap-2">
+        {QUICK_TYPES.map((t) => (
+          <button key={t.v} type="button" aria-pressed={type === t.v} onClick={() => setType(t.v)}
+            className={`choice h-10 rounded border text-sm ${type === t.v ? 'border-sky-200 bg-sys/25 text-white' : 'border-edge text-mute'}`}>{t.label}</button>
+        ))}
+      </div>
+      <label className="grid gap-1 text-xs text-mute">
+        Minutes
+        <input inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value.replace(/[^0-9]/g, ''))}
+          className="h-11 rounded border border-edge bg-panel-2 px-3 text-sm text-ink outline-none focus:border-sys" />
+      </label>
+      {error && <p className="text-xs text-red-300">{error}</p>}
+      <div className="flex gap-2">
+        <Btn variant="ghost" className="flex-1" onClick={() => { setOpen(false); setError(null) }}>Cancel</Btn>
+        <Btn className="flex-1" onClick={go}>Log It</Btn>
+      </div>
+    </div>
+  )
+}
+
+const QUICK_TYPES: { v: Exclude<WorkoutType, 'auto'>; label: string }[] = [
+  { v: 'lower', label: 'Leg Day' }, { v: 'push', label: 'Push' }, { v: 'pull', label: 'Pull' },
+  { v: 'upper', label: 'Upper Body' }, { v: 'full', label: 'Full Body' }, { v: 'cardio', label: 'Cardio' },
+]

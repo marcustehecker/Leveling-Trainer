@@ -213,3 +213,26 @@ describe('changing the weekly routine', () => {
     expect(wasPlannedDay(s, addDays(today, 1))).toBe(true)
   })
 })
+
+describe('quick log', () => {
+  it('logs a leg day without sets: XP and the day count, no records, trial or raid damage', async () => {
+    const { quickWorkout } = await import('./plan')
+    const { logLateWorkout, trialShortfall } = await import('./engine')
+    const q = quickWorkout(profile, { pushups: 20, plankSeconds: 40, cardioLevel: 3, mobilityLevel: 2 }, 'lower', 50)
+    expect(q.title).toBe('Lower Body')
+    expect(q.exercises.length).toBeGreaterThan(0)
+    expect(trialShortfall(q)).toBeTruthy()
+    const s0 = start()
+    const r = logWorkout(s0, q, MON, at(MON))
+    expect(r.result.ok && r.result.xp).toBeGreaterThan(0)
+    expect(r.result.ok && r.result.prs).toEqual([])
+    expect(r.state.records).toEqual(s0.records)
+    expect(r.result.ok ? r.result.raid?.damage ?? 0 : -1).toBe(0)
+    // Works for a missed day too: the penalty is cancelled.
+    const wed = addDays(MON, 2), thu = addDays(MON, 3)
+    const s = advanceTo(r.state, thu, at(thu, 8))
+    const late = logLateWorkout(s, q, wed, thu, at(thu))
+    expect(late.result.ok).toBe(true)
+    expect(late.state.penalties.find((p) => p.date === wed)!.cancelled).toBe(true)
+  })
+})

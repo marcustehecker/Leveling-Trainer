@@ -1,5 +1,5 @@
 import { EXERCISES, EXERCISE_BY_ID, hasEquipment, type Exercise, type Pattern } from './exercises'
-import type { Assessment, DateKey, Profile, WorkoutType } from './types'
+import type { Assessment, DateKey, Profile, WorkoutInput, WorkoutType } from './types'
 import { weekday } from './dates'
 
 export interface PlannedExercise {
@@ -136,6 +136,30 @@ export function generatePlan(p: Profile, a: Assessment): Record<number, PlanDay>
     }
   })
   return out
+}
+
+/** The plan for one workout type, as it would be on a day set to that type. */
+export function planForType(p: Profile, a: Assessment, type: Exclude<WorkoutType, 'auto'>): PlanDay {
+  return generatePlan({ ...p, trainingDays: [1], routine: { 1: type }, swaps: {} }, a)[1]
+}
+
+/** The workout type a plan day was built from. */
+export function typeOfPlan(day: PlanDay): Exclude<WorkoutType, 'auto'> {
+  const t = day.id.split('-')[0]
+  return t === 'legs' ? 'lower' : t.startsWith('full') ? 'full' : (t as Exclude<WorkoutType, 'auto'>)
+}
+
+/**
+ * A workout logged without numbers: the plan's exercises with every set ticked but no reps,
+ * weights or times. It earns workout XP and counts for the day, but sets no records, never
+ * counts toward a Rank Trial and does no raid damage.
+ */
+export function quickWorkout(p: Profile, a: Assessment, type: Exclude<WorkoutType, 'auto'>, minutes: number): WorkoutInput {
+  const day = planForType(p, a, type)
+  return {
+    title: day.title, durationMin: minutes, quick: true,
+    exercises: day.exercises.map((pe) => ({ exerciseId: pe.exerciseId, name: EXERCISE_BY_ID[pe.exerciseId]?.name ?? pe.exerciseId, sets: Array.from({ length: pe.sets }, () => ({ done: true })) })),
+  }
 }
 
 export function planDayFor(p: Profile, a: Assessment, date: DateKey): PlanDay | null {

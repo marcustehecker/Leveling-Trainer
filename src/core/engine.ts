@@ -484,7 +484,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
   for (const e of input.exercises) {
     const ex = EXERCISE_BY_ID[e.exerciseId]
     const sets = e.sets.filter((x) => x.done)
-    if (!ex || sets.length === 0) continue
+    if (!ex || sets.length === 0 || input.quick) continue
     const rec = s.records[e.exerciseId]
     if (ex.kind === 'time') {
       const best = Math.max(...sets.map((x) => x.seconds ?? 0))
@@ -593,6 +593,7 @@ export function logWorkout(s0: GameState, input: WorkoutInput, today: DateKey, n
 
 /** Why a workout can't clear a Rank Trial, or null if it can. */
 export function trialShortfall(w: WorkoutInput): string | null {
+  if (w.quick) return 'was a Quick Log with no sets recorded'
   const sets = w.exercises.flatMap((e) => e.sets)
   if (sets.filter((x) => x.done).length < 4) return 'needs at least 4 completed sets'
   if (sets.some((x) => !x.done)) return 'has sets that were not marked done'
