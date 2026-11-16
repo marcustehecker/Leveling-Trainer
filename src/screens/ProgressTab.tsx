@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../core/achievements'
 import { EXERCISE_BY_ID } from '../core/exercises'
 import { addDays, range, weekStart } from '../core/dates'
-import { isTrainingDay } from '../core/plan'
-import { statLevel } from '../core/engine'
+import { statLevel, wasPlannedDay } from '../core/engine'
 import type { GameState, StatId } from '../core/types'
 import { Panel, RANK_COLOR, RankEmblem, Tag } from '../ui/components'
 import { todayKey, toDisplayWeight, weightUnit } from '../store'
@@ -221,7 +220,8 @@ function Heatmap({ s }: { s: GameState }) {
     if (byDate[d]) return 'trained'
     if (d > today || d < s.createdDate) return 'none'
     if (s.sickDays.includes(d)) return 'sick'
-    if (d < today && isTrainingDay(s.profile, d)) return 'missed'
+    // Judged by what happened on the day, not today's routine: an uncancelled penalty is a miss.
+    if (d < today && wasPlannedDay(s, d)) return 'missed'
     return 'rest'
   }
   const color = (d: string) => {
